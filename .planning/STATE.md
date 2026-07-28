@@ -11,7 +11,7 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 **Phase 1: Foundation — Windows Service + HTTP API skeleton**
 
-- Status: ○ Not started
+- Status: ◆ Context gathered
 - Goal: Agent chạy được như Windows Service, phản hồi `/health` và `/api/capture` với mock scanner, có cấu hình `config.json` + CORS.
 - Success criteria: install service, start, respond /health, mock /api/capture returns PNG+hash, config + CORS works.
 
