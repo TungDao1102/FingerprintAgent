@@ -3,6 +3,7 @@ using System.IO;
 using System.Net;
 using System.Text;
 using FingerprintAgent.Adapters;
+using FingerprintAgent.Logging;
 using FingerprintAgent.Models;
 using Newtonsoft.Json;
 
@@ -10,8 +11,20 @@ namespace FingerprintAgent.Api
 {
     public class CaptureHandler
     {
-        public void Handle(HttpListenerContext context, IScannerAdapter scanner)
+        private readonly AgentLogger _logger;
+
+        public CaptureHandler(AgentLogger logger = null)
         {
+            _logger = logger;
+        }
+
+        public void Handle(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
+        {
+            if (string.IsNullOrEmpty(correlationId))
+            {
+                correlationId = AgentLogger.GenerateCorrelationId();
+            }
+
             try
             {
                 string body;
@@ -20,9 +33,13 @@ namespace FingerprintAgent.Api
                     body = reader.ReadToEnd();
                 }
 
+                _logger?.Info(correlationId, "Capture request received");
+
                 if (string.IsNullOrWhiteSpace(body))
                 {
-                    WriteErrorResponse(context, 400, false, "Request body is empty", "INVALID_REQUEST");
+                    const string errorMessage = "Request body is empty";
+                    _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
                     return;
                 }
 
@@ -33,19 +50,25 @@ namespace FingerprintAgent.Api
                 }
                 catch (JsonException)
                 {
-                    WriteErrorResponse(context, 400, false, "Invalid JSON in request body", "INVALID_REQUEST");
+                    const string errorMessage = "Invalid JSON in request body";
+                    _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
                     return;
                 }
 
                 if (string.IsNullOrWhiteSpace(request.ThamChieuId))
                 {
-                    WriteErrorResponse(context, 400, false, "Missing required field: thamChieuId", "INVALID_REQUEST");
+                    const string errorMessage = "Missing required field: thamChieuId";
+                    _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
                     return;
                 }
 
                 if (string.IsNullOrWhiteSpace(request.MaPhieu))
                 {
-                    WriteErrorResponse(context, 400, false, "Missing required field: maPhieu", "INVALID_REQUEST");
+                    const string errorMessage = "Missing required field: maPhieu";
+                    _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
                     return;
                 }
 
@@ -62,6 +85,8 @@ namespace FingerprintAgent.Api
                     ErrorMessage = null
                 };
 
+                _logger?.Info(correlationId, $"Capture completed — deviceId: {scanner.DeviceId}");
+
                 string json = JsonConvert.SerializeObject(response);
                 byte[] buffer = Encoding.UTF8.GetBytes(json);
 
@@ -73,7 +98,9 @@ namespace FingerprintAgent.Api
             }
             catch (Exception ex)
             {
-                WriteErrorResponse(context, 500, false, $"Capture failed: {ex.Message}", "CAPTURE_FAILED");
+                var errorMessage = $"Capture failed: {ex.Message}";
+                _logger?.Error(correlationId, $"Capture failed — CAPTURE_FAILED: {ex.Message}");
+                WriteErrorResponse(context, 500, false, errorMessage, "CAPTURE_FAILED");
             }
         }
 

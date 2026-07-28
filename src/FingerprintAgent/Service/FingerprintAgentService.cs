@@ -6,6 +6,7 @@ using System.Threading;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Api;
 using FingerprintAgent.Configuration;
+using FingerprintAgent.Logging;
 
 namespace FingerprintAgent.Service
 {
@@ -15,6 +16,7 @@ namespace FingerprintAgent.Service
         private IScannerAdapter _scanner;
         private AgentConfig _config;
         private CancellationTokenSource _cts;
+        private AgentLogger _logger;
 
         public FingerprintAgentService()
         {
@@ -22,11 +24,17 @@ namespace FingerprintAgent.Service
             AutoLog = true;
         }
 
+        public FingerprintAgentService(AgentLogger logger) : this()
+        {
+            _logger = logger;
+        }
+
         protected override void OnStart(string[] args)
         {
             try
             {
                 _config = ConfigLoader.Load();
+                _logger = _logger ?? new AgentLogger(_config.Logging);
             }
             catch (Exception ex)
             {
@@ -36,10 +44,13 @@ namespace FingerprintAgent.Service
             }
 
             _cts = new CancellationTokenSource();
+            var startCid = AgentLogger.GenerateCorrelationId();
+            _logger.Info(startCid, "Service starting");
             _scanner = new MockScannerAdapter();
-            _httpServer = new HttpServer(_config, _scanner);
+            _httpServer = new HttpServer(_config, _scanner, _logger);
             _httpServer.Start();
 
+            _logger.Info(startCid, "Service started");
             TryWriteEventLog("Service started successfully", EventLogEntryType.Information);
         }
 
@@ -47,15 +58,22 @@ namespace FingerprintAgent.Service
         {
             try
             {
-                TryWriteEventLog("Service stopping", EventLogEntryType.Information);
+                var stopCid = AgentLogger.GenerateCorrelationId();
+                _logger?.Info(stopCid, "Service stopping");
                 _cts?.Cancel();
                 _httpServer?.Stop();
                 _httpServer?.Dispose();
+                _logger?.Info(stopCid, "Service stopped");
                 TryWriteEventLog("Service stopped", EventLogEntryType.Information);
             }
             catch (Exception ex)
             {
                 TryWriteEventLog($"Error during stop: {ex.Message}", EventLogEntryType.Error);
+            }
+            finally
+            {
+                _logger?.Dispose();
+                _logger = null;
             }
         }
 

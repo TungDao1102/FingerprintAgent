@@ -3,6 +3,7 @@ using System.Linq;
 using System.ServiceProcess;
 using System.Threading;
 using FingerprintAgent.Configuration;
+using FingerprintAgent.Logging;
 using FingerprintAgent.Service;
 
 namespace FingerprintAgent
@@ -21,9 +22,12 @@ namespace FingerprintAgent
             }
 
             AgentConfig config;
+            AgentLogger logger = null;
             try
             {
                 config = ConfigLoader.Load();
+                logger = new AgentLogger(config.Logging);
+                logger.Info(AgentLogger.GenerateCorrelationId(), "Console mode starting");
             }
             catch (Exception ex)
             {
@@ -32,7 +36,7 @@ namespace FingerprintAgent
                 return;
             }
 
-            var service = new FingerprintAgentService();
+            var service = new FingerprintAgentService(logger);
             service.StartConsole();
 
             Console.WriteLine($"Service running on http://{config.Http.Host}:{config.Http.Port}/. Press Ctrl+C to stop.");

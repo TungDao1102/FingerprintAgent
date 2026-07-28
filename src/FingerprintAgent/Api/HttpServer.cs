@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Configuration;
+using FingerprintAgent.Logging;
 
 namespace FingerprintAgent.Api
 {
@@ -15,15 +16,17 @@ namespace FingerprintAgent.Api
         private readonly HealthHandler _healthHandler;
         private readonly CaptureHandler _captureHandler;
         private readonly CorsMiddleware _cors;
+        private readonly AgentLogger _logger;
         private CancellationTokenSource _cts;
         private Task _workerTask;
         private bool _disposed;
 
-        public HttpServer(AgentConfig config, IScannerAdapter scanner)
+        public HttpServer(AgentConfig config, IScannerAdapter scanner, AgentLogger logger = null)
         {
             _scanner = scanner;
-            _healthHandler = new HealthHandler();
-            _captureHandler = new CaptureHandler();
+            _logger = logger;
+            _healthHandler = new HealthHandler(_logger);
+            _captureHandler = new CaptureHandler(_logger);
             _cors = new CorsMiddleware(config.Cors.Mode, config.Cors.AllowedOrigins);
 
             _listener = new HttpListener();
@@ -35,7 +38,7 @@ namespace FingerprintAgent.Api
             : this(new AgentConfig
             {
                 Http = new HttpConfig { Host = host, Port = port }
-            }, scanner)
+            }, scanner, null)
         {
         }
 
@@ -124,13 +127,15 @@ namespace FingerprintAgent.Api
                 // Set default content type
                 context.Response.ContentType = "application/json";
 
+                var correlationId = AgentLogger.GenerateCorrelationId();
+
                 if (path == "/health" && method == "GET")
                 {
-                    _healthHandler.Handle(context, _scanner);
+                    _healthHandler.Handle(context, _scanner, correlationId);
                 }
                 else if (path == "/api/capture" && method == "POST")
                 {
-                    _captureHandler.Handle(context, _scanner);
+                    _captureHandler.Handle(context, _scanner, correlationId);
                 }
                 else
                 {

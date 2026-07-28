@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Text;
 using FingerprintAgent.Adapters;
+using FingerprintAgent.Logging;
 using Newtonsoft.Json;
 
 namespace FingerprintAgent.Api
@@ -9,14 +10,17 @@ namespace FingerprintAgent.Api
     public class HealthHandler
     {
         private readonly DateTime _startTime;
+        private readonly AgentLogger _logger;
 
-        public HealthHandler()
+        public HealthHandler(AgentLogger logger = null)
         {
             _startTime = DateTime.UtcNow;
+            _logger = logger;
         }
 
-        public void Handle(HttpListenerContext context, IScannerAdapter scanner)
+        public void Handle(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
         {
+            _logger?.Debug(correlationId ?? AgentLogger.GenerateCorrelationId(), "Health check requested");
             var response = new
             {
                 status = "healthy",
