@@ -2,9 +2,8 @@ using System;
 using System.Linq;
 using System.ServiceProcess;
 using System.Threading;
-using FingerprintAgent.Adapters;
-using FingerprintAgent.Api;
 using FingerprintAgent.Configuration;
+using FingerprintAgent.Service;
 
 namespace FingerprintAgent
 {
@@ -12,7 +11,14 @@ namespace FingerprintAgent
     {
         static void Main(string[] args)
         {
-            bool consoleMode = Environment.UserInteractive || args.Contains("--console");
+            bool serviceMode = args.Contains("--service");
+            bool consoleMode = args.Contains("--console") || Environment.UserInteractive;
+
+            if (serviceMode || !consoleMode)
+            {
+                ServiceBase.Run(new FingerprintAgentService());
+                return;
+            }
 
             AgentConfig config;
             try
@@ -26,21 +32,8 @@ namespace FingerprintAgent
                 return;
             }
 
-            if (consoleMode)
-            {
-                RunAsConsole(config);
-            }
-            else
-            {
-                ServiceBase.Run(new FingerprintAgentService());
-            }
-        }
-
-        private static void RunAsConsole(AgentConfig config)
-        {
-            var scanner = new MockScannerAdapter();
-            var server = new HttpServer(config, scanner);
-            server.Start();
+            var service = new FingerprintAgentService();
+            service.StartConsole();
 
             Console.WriteLine($"Service running on http://{config.Http.Host}:{config.Http.Port}/. Press Ctrl+C to stop.");
 
@@ -49,12 +42,12 @@ namespace FingerprintAgent
             {
                 e.Cancel = true;
                 Console.WriteLine("Shutdown requested...");
+                service.StopConsole();
                 exitEvent.Set();
             };
 
             exitEvent.WaitOne();
 
-            server.Stop();
             Console.WriteLine("Service stopped.");
         }
     }
