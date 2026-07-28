@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
 status: unknown
-last_updated: "2026-07-28T22:52:00Z"
+last_updated: "2026-07-28T23:00:00Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
-  percent: 25
+  completed_plans: 4
+  percent: 50
 ---
 
 # State: FingerprintAgent
@@ -33,10 +33,22 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1     | ◐      | 3/5   | 60%      |
+| 1     | ◐      | 4/5   | 80%      |
 | 2     | ○      | 0/5   | 0%       |
 | 3     | ○      | 0/3   | 0%       |
 | 4     | ○      | 0/4   | 0%       |
+
+## Plan 01-04 Completed
+
+**Logging — File + EventLog + Structured Format**
+
+- `AgentLogger` with file sink, EventLog sink, log level filtering, correlation IDs
+- Structured log format: `YYYY-MM-DDTHH:MM:SS.ffffffZ [LEVEL] [correlationId] message`
+- SEC-04 base64 redaction for messages that look like image data
+- Wired logging into `FingerprintAgentService`, `HttpServer`, `HealthHandler`, `CaptureHandler`, `Program.cs`
+- 11 new `AgentLoggerTests` (file creation, format regex, level filtering, correlation IDs, redaction, EventLog fallback, concurrency, directory creation)
+- Release build 0 warnings / 0 errors; 35/35 tests pass; console smoke test produced structured log file
+- 1 atomic commit for 01-04 code + tests, 1 docs commit
 
 ## Plan 01-03 Completed
 

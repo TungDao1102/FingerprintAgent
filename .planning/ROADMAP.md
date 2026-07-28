@@ -41,7 +41,7 @@
 | 01   | Walking Skeleton Core | ✅ Complete | 2026-07-28 |
 | 02   | Configuration + CORS | ✅ Complete | 2026-07-28 |
 | 03   | Windows Service Mode | ✅ Complete | 2026-07-28 |
-| 04   | Logging & Observability | ⬜ Pending | — |
+| 04   | Logging & Observability | ✅ Complete | 2026-07-28 |
 | 05   | PowerShell Scripts | ✅ Complete | 2026-07-28 |
 
 ---
