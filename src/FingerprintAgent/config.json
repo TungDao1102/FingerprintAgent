@@ -1,0 +1,28 @@
+{
+  "service": {
+    "name": "FingerprintAgent",
+    "displayName": "Fingerprint Agent",
+    "description": "Local fingerprint capture service"
+  },
+  "http": {
+    "host": "127.0.0.1",
+    "port": 5043
+  },
+  "cors": {
+    "mode": "wildcard",
+    "allowedOrigins": []
+  },
+  "scanner": {
+    "priority": ["SecuGen", "DigitalPersona", "Futronic"],
+    "mockMode": true
+  },
+  "logging": {
+    "level": "INFO",
+    "file": "C:\\ProgramData\\FingerprintAgent\\Logs\\agent.log",
+    "maxSizeMb": 10,
+    "maxFiles": 5
+  },
+  "security": {
+    "bindIp": "127.0.0.1"
+  }
+}
