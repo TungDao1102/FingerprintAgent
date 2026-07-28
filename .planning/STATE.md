@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
 status: unknown
-last_updated: "2026-07-28T22:15:00Z"
+last_updated: "2026-07-28T22:52:00Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
-  percent: 10
+  completed_plans: 3
+  percent: 25
 ---
 
 # State: FingerprintAgent
@@ -33,10 +33,23 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1     | ◐      | 2/5   | 40%      |
+| 1     | ◐      | 3/5   | 60%      |
 | 2     | ○      | 0/5   | 0%       |
 | 3     | ○      | 0/3   | 0%       |
 | 4     | ○      | 0/4   | 0%       |
+
+## Plan 01-03 Completed
+
+**Windows Service Hosting + PowerShell Scripts**
+
+- `FingerprintAgentService` extends `ServiceBase` with `OnStart`/`OnStop` lifecycle
+- `Program.cs` dual-mode dispatch: `--service` for SCM, `--console`/interactive for debug
+- `scripts/Install-Service.ps1` — admin check, idempotent install, EventLog source, log dir, failure recovery
+- `scripts/Uninstall-Service.ps1` — admin check, idempotent removal
+- `scripts/Test-Capture.ps1` — smoke tests `/health` and `/api/capture`
+- EventLog writes wrapped for resilience in console/non-admin runs
+- Release build 0 warnings / 0 errors; 24/24 tests pass; console `/health` smoke test returns 200
+- 4 atomic commits for 01-03 (subagent failed; implemented inline)
 
 ## Plan 01-02 Completed
 
