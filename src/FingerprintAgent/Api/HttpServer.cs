@@ -4,30 +4,39 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
+using FingerprintAgent.Configuration;
 
 namespace FingerprintAgent.Api
 {
     public class HttpServer : IDisposable
     {
         private readonly HttpListener _listener;
-        private readonly string _host;
-        private readonly int _port;
         private readonly IScannerAdapter _scanner;
         private readonly HealthHandler _healthHandler;
         private readonly CaptureHandler _captureHandler;
+        private readonly CorsMiddleware _cors;
         private CancellationTokenSource _cts;
         private Task _workerTask;
         private bool _disposed;
 
-        public HttpServer(string host, int port, IScannerAdapter scanner)
+        public HttpServer(AgentConfig config, IScannerAdapter scanner)
         {
-            _host = host;
-            _port = port;
             _scanner = scanner;
             _healthHandler = new HealthHandler();
             _captureHandler = new CaptureHandler();
+            _cors = new CorsMiddleware(config.Cors.Mode, config.Cors.AllowedOrigins);
+
             _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://{host}:{port}/");
+            _listener.Prefixes.Add($"http://{config.Http.Host}:{config.Http.Port}/");
+        }
+
+        // Keep the old constructor for backward compatibility
+        public HttpServer(string host, int port, IScannerAdapter scanner)
+            : this(new AgentConfig
+            {
+                Http = new HttpConfig { Host = host, Port = port }
+            }, scanner)
+        {
         }
 
         public void Start()
@@ -64,7 +73,6 @@ namespace FingerprintAgent.Api
                 }
                 catch (AggregateException)
                 {
-                    // Swallow exceptions from the stopped listener loop
                 }
 
                 _listener.Close();
@@ -101,6 +109,15 @@ namespace FingerprintAgent.Api
         {
             try
             {
+                var origin = context.Request.Headers["Origin"];
+
+                // CORS preflight check
+                if (_cors.HandleCorsPreflight(context.Request, context.Response))
+                    return;
+
+                // Apply CORS headers for actual requests
+                _cors.ApplyCorsHeaders(context.Response, origin);
+
                 var path = context.Request.Url.AbsolutePath.TrimEnd('/');
                 var method = context.Request.HttpMethod;
 
