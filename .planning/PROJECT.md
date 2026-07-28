@@ -28,7 +28,7 @@ Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhấ
 - [ ] Agent hỗ trợ ít nhất 3 hãng máy quét vân tay phổ biến (SecuGen, Digital Persona, Futronic).
 - [ ] Agent trả về ảnh PNG bytes kèm SHA-256 hash.
 - [ ] Agent cấu hình được origin cho phép gọi API (`allowedOrigins`) để dùng cho nhiều ứng dụng web.
-- [ ] Agent có thể cài đặt/gỡ bỏ dễ dàng qua PowerShell script.
+- [ ] Agent có thể cài đặt/gỡ bỏ dễ dàng qua MSI installer (phù hợp non-tech user).
 
 ### Out of Scope
 
@@ -48,7 +48,7 @@ Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhấ
 ## Constraints
 
 - **Tech stack**: .NET Framework 4.8, framework-dependent, Windows Service, HTTP listener (System.Net.HttpListener hoặc self-host OWIN).
-- **Deployment**: Gói nhẹ — chỉ copy exe + dll adapter + config.json + PowerShell scripts; không self-contained.
+- **Deployment**: MSI installer cho non-tech user; framework-dependent .NET 4.8; auto-update từ GitHub Release trong tương lai.
 - **Compatibility**: Windows 10/11; có thể chạy trên Windows 7 SP1 nếu .NET Framework 4.8 đã cài (không cam kết chính thức).
 - **Security**: HTTP API bind `localhost` (hoặc IP LAN nếu cần) với CORS mặc định `Access-Control-Allow-Origin: *` (giống agent ký số hiện tại); không lưu trữ biometric data.
 - **Multi-adapter**: Ít nhất 3 hãng SecuGen, Digital Persona, Futronic; ưu tiên SecuGen vì SDK free + native .NET.
@@ -63,6 +63,8 @@ Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhấ
 | Agent là HTTP server trên localhost:5043 | Giống mô hình sign USB token đang dùng, Angular gọi trực tiếp | — Pending |
 | CORS mặc định `Access-Control-Allow-Origin: *` | Giống agent ký số hiện tại; dễ dùng cho nhiều ứng dụng web khác | — Pending |
 | CORS có thể giới hạn bằng `allowedOrigins` | Cho phép lock-down khi triển khai trong môi trường yêu cầu kiểm soát | — Pending |
+| MSI installer cho non-tech user | Double-click cài đặt, không cần chạy PowerShell; phù hợp máy bệnh viện | — Pending |
+| Auto-update từ GitHub Release | Dễ phân phối phiên bản mới cho nhiều máy tính | — Pending |
 | Không hỗ trợ Win7 32-bit | Giảm phức tạp, tập trung nguồn lực vào stack hiện đại hơn | — Pending |
 | Backend không gọi agent trực tiếp | Agent ở PC bệnh viện sau NAT/firewall; Angular → agent là hướng thực tế | — Pending |
 

@@ -12,11 +12,11 @@
 **Mode:** mvp
 
 **Success Criteria:**
-1. Có thể cài đặt service `FingerprintAgent` trên Windows 10/11 bằng PowerShell.
+1. Có thể cài đặt service `FingerprintAgent` trên Windows 10/11 bằng PowerShell script tạm thời (MSI sẽ làm ở Phase 4).
 2. Service khởi động thành công và `GET /health` trả về 200 với thông tin uptime/scanner.
 3. `POST /api/capture` trả về ảnh PNG mẫu (mock) kèm SHA-256 hash hợp lệ.
-4. `config.json` cấu hình được port, allowedOrigins, logging.
-5. CORS từ chối origin không nằm trong danh sách cho phép.
+4. `config.json` cấu hình được port, CORS mode, logging.
+5. CORS từ chối origin không nằm trong danh sách cho phép khi ở chế độ allowlist; chấp nhận mọi origin khi ở chế độ wildcard.
 
 **Requirements Covered:**
 - API-01, API-02, API-03, API-04, API-05, API-06
@@ -27,12 +27,12 @@
 
 **Deliverables:**
 - `.csproj` + solution .NET Framework 4.8
-- Windows Service entry point + lifecycle
+- Windows Service entry point + lifecycle (ServiceBase)
 - HTTP listener với routing `/api/capture`, `/health`
 - MockScannerAdapter triển khai `IScannerAdapter`
 - Configuration provider + file schema
 - Logging sink (file + Event Log)
-- `Install-Service.ps1`, `Uninstall-Service.ps1`, `Test-Capture.ps1`
+- `Install-Service.ps1`, `Uninstall-Service.ps1`, `Test-Capture.ps1` (tạm thời cho dev/test; MSI cho end user ở Phase 4)
 
 ---
 
@@ -96,9 +96,9 @@
 **Mode:** mvp
 
 **Success Criteria:**
-1. Gói cài đặt chứa exe + adapter DLL + SDK DLL + config.json + scripts.
-2. `Install-Service.ps1` cài đặt service thành công trên máy sạch chưa có dev tools.
-3. `Uninstall-Service.ps1` gỡ cài đặt sạch sẽ.
+1. Tạo được MSI installer từ build script (WiX Toolset hoặc WixSharp).
+2. MSI cài đặt service, thư mục log, và VC++ redist x86 silently nếu thiếu.
+3. MSI gỡ cài đặt sạch sẽ (dừng service, xóa files, xóa service).
 4. `Test-Capture.ps1` gọi `/api/capture` và trả về ảnh base64.
 5. Angular client gọi `localhost:5043/api/capture` từ domain SaaS (với CORS đã cấu hình) và gửi kết quả về backend.
 6. Không có crash khi scanner không cắm — service vẫn healthy.
@@ -107,11 +107,12 @@
 - DEP-01, DEP-02, DEP-03, DEP-04
 
 **Deliverables:**
-- Build script tạo deployment package
-- PowerShell install/uninstall/test scripts
+- Build script tạo MSI (WiX/WixSharp)
+- `Install-Service.ps1`, `Uninstall-Service.ps1`, `Test-Capture.ps1` cho dev/test
 - Hướng dẫn triển khai cho IT bệnh viện
 - Integration test từ browser → agent
 - `README.md` + `DEPLOYMENT.md`
+- Cơ chế auto-update từ GitHub Release (updater helper hoặc built-in)
 
 ---
 
@@ -133,8 +134,8 @@
 - **Polling/WebSocket mode** để backend SaaS có thể đẩy yêu cầu quét xuống agent qua NAT/firewall.
 - **Plugin adapter** cho hãng thứ 4+ (ZKTeco, v.v.).
 - **ANSI/ISO template conversion** khi SDK hỗ trợ.
-- **MSI installer** với UI cấu hình cơ bản.
-- **Auto-update mechanism**.
+- **Code signing certificate** để giảm cảnh báo SmartScreen khi cài MSI.
+- **Advanced auto-update** (delta update, rollback, channel preview/stable).
 
 ---
 *Roadmap created: 2026-07-28*

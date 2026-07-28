@@ -29,8 +29,8 @@ Phase này **không** bao gồm adapter thật cho SecuGen / Digital Persona / F
 - **D-05:** Log file đặt tại `C:\ProgramData\FingerprintAgent\Logs\agent.log` (hoặc đường dẫn cấu hình).
 
 ### Windows Service Hosting
-- **D-06:** Dùng `ServiceBase` thuần (không dùng Topshelf) để phù hợp với mục tiêu MSI installer cuối cùng.
-- **D-07:** Phase 1 cài đặt service qua PowerShell script tạm thời (`Install-Service.ps1`). MSI sẽ làm trong Phase 4.
+- **D-06:** Dùng `ServiceBase` thuần (không dùng Topshelf) để phù hợp với mục tiêu MSI installer.
+- **D-07:** Phase 1 cài đặt service qua PowerShell script tạm thời (`Install-Service.ps1`) cho dev/test. MSI installer sẽ làm trong Phase 4 để phù hợp với non-tech user.
 
 ### Project Structure
 - **D-08:** Một project duy nhất cho Phase 1: `FingerprintAgent.csproj` chứa tất cả (Service host, HTTP listener, Mock adapter, Config, Logging).
