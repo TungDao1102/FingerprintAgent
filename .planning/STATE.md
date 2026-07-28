@@ -1,3 +1,17 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: Release
+status: unknown
+last_updated: "2026-07-28T14:47:13.833Z"
+progress:
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 4
+  completed_plans: 0
+  percent: 0
+---
+
 # State: FingerprintAgent
 
 ## Project Reference
@@ -5,7 +19,7 @@
 See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 **Core value:** Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhất một trong các máy quét vân tay phổ biến, và trả về ảnh PNG đáng tin cậy cho ứng dụng web qua HTTP API địa phương.
-**Current focus:** Phase 1 — Foundation (Windows Service + HTTP API skeleton)
+**Current focus:** Phase 1 — Foundation — Windows Service + HTTP API skeleton
 
 ## Current Phase
 
