@@ -19,4 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\FingerprintAgent\FingerprintAgent.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
 </Project>
