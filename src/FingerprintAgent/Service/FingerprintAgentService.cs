@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Security;
 using System.ServiceProcess;
 using System.Threading;
 using FingerprintAgent.Adapters;
@@ -30,32 +31,47 @@ namespace FingerprintAgent.Service
             catch (Exception ex)
             {
                 var message = $"Failed to load configuration: {ex.Message}";
-                EventLog.WriteEntry("FingerprintAgent", message, EventLogEntryType.Error);
+                TryWriteEventLog(message, EventLogEntryType.Error);
                 throw;
             }
 
             _cts = new CancellationTokenSource();
             _scanner = new MockScannerAdapter();
-            var cors = new CorsMiddleware(_config.Cors.Mode, _config.Cors.AllowedOrigins);
             _httpServer = new HttpServer(_config, _scanner);
             _httpServer.Start();
 
-            EventLog.WriteEntry("FingerprintAgent", "Service started successfully", EventLogEntryType.Information);
+            TryWriteEventLog("Service started successfully", EventLogEntryType.Information);
         }
 
         protected override void OnStop()
         {
             try
             {
-                EventLog.WriteEntry("FingerprintAgent", "Service stopping", EventLogEntryType.Information);
+                TryWriteEventLog("Service stopping", EventLogEntryType.Information);
                 _cts?.Cancel();
                 _httpServer?.Stop();
                 _httpServer?.Dispose();
-                EventLog.WriteEntry("FingerprintAgent", "Service stopped", EventLogEntryType.Information);
+                TryWriteEventLog("Service stopped", EventLogEntryType.Information);
             }
             catch (Exception ex)
             {
-                EventLog.WriteEntry("FingerprintAgent", $"Error during stop: {ex.Message}", EventLogEntryType.Error);
+                TryWriteEventLog($"Error during stop: {ex.Message}", EventLogEntryType.Error);
+            }
+        }
+
+        private static void TryWriteEventLog(string message, EventLogEntryType type)
+        {
+            try
+            {
+                EventLog.WriteEntry("FingerprintAgent", message, type);
+            }
+            catch (SecurityException securityEx)
+            {
+                Debug.WriteLine($"[FingerprintAgent] {type}: {message} (event log access denied: {securityEx.Message})");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[FingerprintAgent] Failed to write event log: {ex.Message}");
             }
         }
 

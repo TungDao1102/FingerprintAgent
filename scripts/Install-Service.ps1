@@ -1,13 +1,18 @@
 #Requires -RunAsAdministrator
 [CmdletBinding()]
 param(
-    [string]$BinPath = "$PSScriptRoot\..\src\FingerprintAgent\bin\Release\net48\FingerprintAgent.exe",
+    [string]$BinPath = $null,
     [string]$LogDir = "C:\ProgramData\FingerprintAgent\Logs",
     [string]$ServiceName = "FingerprintAgent"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($BinPath)) {
+    $base = if ($PSScriptRoot) { $PSScriptRoot } else { $PWD.Path }
+    $BinPath = Join-Path $base "..\src\FingerprintAgent\bin\Release\net48\FingerprintAgent.exe"
+}
 
 function Test-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
