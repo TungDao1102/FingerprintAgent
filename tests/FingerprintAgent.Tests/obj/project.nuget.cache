@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "3ADpYBlZ7LM=",
+  "dgSpecHash": "Rm2MYcwzWws=",
   "success": true,
   "projectFilePath": "C:\\Users\\daotu\\OneDrive\\Documents\\Fingerprint-Local-Agent\\tests\\FingerprintAgent.Tests\\FingerprintAgent.Tests.csproj",
   "expectedPackageFiles": [
@@ -26,18 +26,5 @@
     "C:\\Users\\daotu\\.nuget\\packages\\xunit.extensibility.execution\\2.9.3\\xunit.extensibility.execution.2.9.3.nupkg.sha512",
     "C:\\Users\\daotu\\.nuget\\packages\\xunit.runner.visualstudio\\2.8.2\\xunit.runner.visualstudio.2.8.2.nupkg.sha512"
   ],
-  "logs": [
-    {
-      "code": "NU1603",
-      "level": "Warning",
-      "message": "FingerprintAgent.Tests depends on Microsoft.NET.Test.Sdk (>= 17.12.3) but Microsoft.NET.Test.Sdk 17.12.3 was not found. Microsoft.NET.Test.Sdk 17.13.0 was resolved instead.",
-      "projectPath": "C:\\Users\\daotu\\OneDrive\\Documents\\Fingerprint-Local-Agent\\tests\\FingerprintAgent.Tests\\FingerprintAgent.Tests.csproj",
-      "warningLevel": 1,
-      "filePath": "C:\\Users\\daotu\\OneDrive\\Documents\\Fingerprint-Local-Agent\\tests\\FingerprintAgent.Tests\\FingerprintAgent.Tests.csproj",
-      "libraryId": "Microsoft.NET.Test.Sdk",
-      "targetGraphs": [
-        ".NETFramework,Version=v4.8"
-      ]
-    }
-  ]
+  "logs": []
 }

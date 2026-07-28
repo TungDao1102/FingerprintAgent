@@ -1033,7 +1033,7 @@
   "projectFileDependencyGroups": {
     ".NETFramework,Version=v4.8": [
       "FingerprintAgent >= 1.0.0",
-      "Microsoft.NET.Test.Sdk >= 17.12.3",
+      "Microsoft.NET.Test.Sdk >= 17.13.0",
       "Moq >= 4.20.72",
       "xunit >= 2.9.3",
       "xunit.runner.visualstudio >= 2.8.2"
@@ -1095,7 +1095,7 @@
         "dependencies": {
           "Microsoft.NET.Test.Sdk": {
             "target": "Package",
-            "version": "[17.12.3, )"
+            "version": "[17.13.0, )"
           },
           "Moq": {
             "target": "Package",
@@ -1115,17 +1115,5 @@
         "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.306\\RuntimeIdentifierGraph.json"
       }
     }
-  },
-  "logs": [
-    {
-      "code": "NU1603",
-      "level": "Warning",
-      "warningLevel": 1,
-      "message": "FingerprintAgent.Tests depends on Microsoft.NET.Test.Sdk (>= 17.12.3) but Microsoft.NET.Test.Sdk 17.12.3 was not found. Microsoft.NET.Test.Sdk 17.13.0 was resolved instead.",
-      "libraryId": "Microsoft.NET.Test.Sdk",
-      "targetGraphs": [
-        ".NETFramework,Version=v4.8"
-      ]
-    }
-  ]
+  }
 }

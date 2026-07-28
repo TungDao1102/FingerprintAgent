@@ -124,7 +124,7 @@
           "dependencies": {
             "Microsoft.NET.Test.Sdk": {
               "target": "Package",
-              "version": "[17.12.3, )"
+              "version": "[17.13.0, )"
             },
             "Moq": {
               "target": "Package",
