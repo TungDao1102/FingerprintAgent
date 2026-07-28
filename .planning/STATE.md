@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
 status: unknown
-last_updated: "2026-07-28T21:53:00Z"
+last_updated: "2026-07-28T22:15:00Z"
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 4
-  completed_plans: 1
-  percent: 6
+  total_plans: 5
+  completed_plans: 2
+  percent: 10
 ---
 
 # State: FingerprintAgent
@@ -33,10 +33,21 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1     | ◐      | 1/5   | 20%      |
+| 1     | ◐      | 2/5   | 40%      |
 | 2     | ○      | 0/5   | 0%       |
 | 3     | ○      | 0/3   | 0%       |
 | 4     | ○      | 0/4   | 0%       |
+
+## Plan 01-02 Completed
+
+**Configuration + CORS + Error Responses**
+
+- `AgentConfig` with 6 nested config classes, `ConfigLoader` reading `config.json` via `Microsoft.Extensions.Configuration.Json`
+- `CorsMiddleware` with wildcard/allowlist modes, OPTIONS preflight (204/403)
+- `HttpServer` and `Program.cs` wired with `AgentConfig` instead of hardcoded values
+- `config.json` at project root with full schema (service, http, cors, scanner, logging, security)
+- 5 ConfigLoader unit tests + 6 CORS integration tests — all 24 tests passing
+- 6 atomic commits (RED→GREEN per task)
 
 ## Plan 01-01 Completed
 
@@ -57,6 +68,15 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 None.
 
 ## Recent Decisions
+
+### Plan 01-02 Decisions
+
+- Manual config binding (GetSection/Value) instead of IConfiguration.Get<T>() — avoids Binder extension issues on .NET Framework 4.8
+- CorsMiddleware tested via real HttpServer + HttpClient because HttpListenerRequest/Response cannot be unit-tested in isolation
+- HttpServer dual constructor for backward compatibility with Plan 01 integration tests
+- Config load failure: prints fatal error to stderr and exits with code 1 (logger in Plan 04)
+
+### Prior Decisions
 
 - Windows Service chạy nền.
 - .NET Framework 4.8, framework-dependent.

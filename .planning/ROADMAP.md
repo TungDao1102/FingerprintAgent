@@ -39,7 +39,7 @@
 | Plan | Title | Status | Completed |
 |------|-------|--------|-----------|
 | 01   | Walking Skeleton Core | ✅ Complete | 2026-07-28 |
-| 02   | Configuration + CORS | ⬜ Pending | — |
+| 02   | Configuration + CORS | ✅ Complete | 2026-07-28 |
 | 03   | Windows Service Mode | ⬜ Pending | — |
 | 04   | Logging & Observability | ⬜ Pending | — |
 | 05   | PowerShell Scripts | ⬜ Pending | — |
