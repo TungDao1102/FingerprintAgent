@@ -50,7 +50,7 @@ Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhấ
 - **Tech stack**: .NET Framework 4.8, framework-dependent, Windows Service, HTTP listener (System.Net.HttpListener hoặc self-host OWIN).
 - **Deployment**: Gói nhẹ — chỉ copy exe + dll adapter + config.json + PowerShell scripts; không self-contained.
 - **Compatibility**: Windows 10/11; có thể chạy trên Windows 7 SP1 nếu .NET Framework 4.8 đã cài (không cam kết chính thức).
-- **Security**: HTTP API bind `localhost` (hoặc IP LAN nếu cần) với CORS `allowedOrigins`; không lưu trữ biometric data.
+- **Security**: HTTP API bind `localhost` (hoặc IP LAN nếu cần) với CORS mặc định `Access-Control-Allow-Origin: *` (giống agent ký số hiện tại); không lưu trữ biometric data.
 - **Multi-adapter**: Ít nhất 3 hãng SecuGen, Digital Persona, Futronic; ưu tiên SecuGen vì SDK free + native .NET.
 - **Resource usage**: Idle footprint thấp, capture latency < 3 giây (không tính thời gian người dùng đặt ngón tay).
 
@@ -61,7 +61,8 @@ Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhấ
 | Windows Service (chạy nền) | Phù hợp máy cố định ở bệnh viện, tự khởi động, luôn sẵn sàng | — Pending |
 | .NET Framework 4.8 | Có sẵn trên Win10/11, nhẹ, tương thích SDK vân tay | — Pending |
 | Agent là HTTP server trên localhost:5043 | Giống mô hình sign USB token đang dùng, Angular gọi trực tiếp | — Pending |
-| CORS `allowedOrigins` configurable | Giúp agent dùng cho nhiều ứng dụng web khác, không riêng HIS | — Pending |
+| CORS mặc định `Access-Control-Allow-Origin: *` | Giống agent ký số hiện tại; dễ dùng cho nhiều ứng dụng web khác | — Pending |
+| CORS có thể giới hạn bằng `allowedOrigins` | Cho phép lock-down khi triển khai trong môi trường yêu cầu kiểm soát | — Pending |
 | Không hỗ trợ Win7 32-bit | Giảm phức tạp, tập trung nguồn lực vào stack hiện đại hơn | — Pending |
 | Backend không gọi agent trực tiếp | Agent ở PC bệnh viện sau NAT/firewall; Angular → agent là hướng thực tế | — Pending |
 

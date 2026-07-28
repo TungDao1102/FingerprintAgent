@@ -21,7 +21,7 @@
 - [ ] **API-02**: Request body chấp nhận JSON với các trường `thamChieuId`, `maPhieu`, `loaiPhieu`, `vaiKyId`, `nhanLucId`, `metadata`.
 - [ ] **API-03**: Response trả về JSON chứa `isSuccess`, `imageBytes` (base64 PNG), `mimeType`, `capturedAt`, `deviceId`, `verificationData` (SHA-256 base64), `errorMessage`.
 - [ ] **API-04**: Response lỗi trả về HTTP 400/503/504 với `errorCode` rõ ràng (`SCANNER_NOT_CONNECTED`, `CAPTURE_TIMEOUT`, `CAPTURE_FAILED`, `INVALID_REQUEST`).
-- [ ] **API-05**: Agent hỗ trợ CORS với danh sách `allowedOrigins` cấu hình trong `config.json`.
+- [ ] **API-05**: Agent trả về CORS header `Access-Control-Allow-Origin: *` cho mọi request HTTP, với tùy chọn cấu hình `allowedOrigins` để giới hạn nếu cần.
 - [ ] **API-06**: Agent cung cấp `GET /health` trả về trạng thái service, scanner đã kết nối, model, uptime.
 
 ### Windows Service (SVC)
@@ -35,16 +35,19 @@
 ### Configuration (CFG)
 
 - [ ] **CFG-01**: Agent đọc cấu hình từ `config.json` trong thư mục cài đặt.
-- [ ] **CFG-02**: Cấu hình hỗ trợ các mục: service name, HTTP host/port, allowedOrigins, scanner list, backend (nếu cần polling mode v2), logging, security.
+- [ ] **CFG-02**: Cấu hình hỗ trợ các mục: service name, HTTP host/port, CORS mode (`wildcard` hoặc `allowlist`), allowedOrigins, scanner list, backend (nếu cần polling mode v2), logging, security.
 - [ ] **CFG-03**: Agent tải lại cấu hình khi file thay đổi (file watcher) mà không cần restart service.
 - [ ] **CFG-04**: Nếu `config.json` thiếu hoặc không hợp lệ, service ghi lỗi rõ ràng và dừng khởi động.
 
 ### Security (SEC)
 
 - [ ] **SEC-01**: HTTP endpoint mặc định bind `127.0.0.1`; cho phép ghi đè IP LAN nếu cấu hình rõ ràng.
-- [ ] **SEC-02**: CORS chỉ cho phép origin nằm trong `allowedOrigins`; không cho phép wildcard `*`.
+- [ ] **SEC-02**: Agent trả về CORS `Access-Control-Allow-Origin: *` theo mặc định; tùy chọn chuyển sang `allowlist` nếu cấu hình.
 - [ ] **SEC-03**: Agent không lưu trữ ảnh vân tay, template, hoặc credential trên đĩa.
 - [ ] **SEC-04**: Log không chứa dữ liệu vân tay; chỉ ghi metadata (deviceId, timestamp, error code).
+
+- [ ] **SEC-03**: Agent không lưu trữ ảnh vân tay, template, hoặc credential trên đĩa.
+
 
 ### Observability (OBS)
 
