@@ -34,6 +34,16 @@
 - Logging sink (file + Event Log)
 - `Install-Service.ps1`, `Uninstall-Service.ps1`, `Test-Capture.ps1` (tạm thời cho dev/test; MSI cho end user ở Phase 4)
 
+**Plan Progress:**
+
+| Plan | Title | Status | Completed |
+|------|-------|--------|-----------|
+| 01   | Walking Skeleton Core | ✅ Complete | 2026-07-28 |
+| 02   | Configuration + CORS | ⬜ Pending | — |
+| 03   | Windows Service Mode | ⬜ Pending | — |
+| 04   | Logging & Observability | ⬜ Pending | — |
+| 05   | PowerShell Scripts | ⬜ Pending | — |
+
 ---
 
 ## Phase 2: Multi-vendor Scanner Adapters
