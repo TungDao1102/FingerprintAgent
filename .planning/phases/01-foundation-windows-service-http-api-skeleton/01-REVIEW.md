@@ -1,6 +1,6 @@
 ---
 phase: 01-foundation-windows-service-http-api-skeleton
-reviewed: 2026-07-29T00:30:00Z
+reviewed: 2026-07-29T00:00:00Z
 depth: standard
 files_reviewed: 24
 files_reviewed_list:
@@ -30,163 +30,158 @@ files_reviewed_list:
   - scripts/Uninstall-Service.ps1
 findings:
   critical: 0
-  warning: 3
-  info: 0
-  total: 3
+  warning: 4
+  info: 4
+  total: 8
 status: issues_found
 ---
 
 # Phase 01: Code Review Report
 
-**Reviewed:** 2026-07-29T00:30:00Z
+**Reviewed:** 2026-07-29
 **Depth:** standard
 **Files Reviewed:** 24
 **Status:** issues_found
 
----
-
 ## Summary
 
-This is a re-review after fixes were applied for CR-01 (timeout) and CR-02 (null check).
-Both critical issues were properly fixed:
-- CR-02: `result.ImageBytes ?? Array.Empty<byte>()` null-coalescing is now present
-  at `CaptureHandler.cs:77`
-- CR-01: Timeout was increased from 5s to 30s at `HttpServer.cs:86`
+Re-review after fix pass. The previous 3 warnings have been partially addressed:
+- **WR-01 (Graphics disposal race): FIXED** — `GenerateMockPng` now captures PNG data via `ms.ToArray()` inside the inner `using (var ms...)` block before the outer `using` block disposes `graphics`/`bitmap`. Data is captured before any disposal.
+- **WR-02 (English JSON substring filter): PARTIALLY FIXED** — `StringComparison.OrdinalIgnoreCase` is now used, making the substring search culture-invariant at the byte level. However, the filter still relies on error message string matching which could theoretically miss some exception messages.
+- **WR-03 (shutdownError overwrite): INTENTIONAL/UNCHANGED** — Still overwrites successive exceptions. Appears to be an intentional design choice (only last error reported).
 
-WR-01 (nullable logger) was intentionally skipped per architectural constraints noted
-in the previous review.
-
-Three remaining issues were found that were either missed in the prior review or
-are new observations. No critical issues remain.
+New issues found: 2 warnings, 4 info items.
 
 ---
 
 ## Warnings
 
-### WR-01: MockScannerAdapter.Dispose() pattern may cause use-after-dispose
+### WR-01: HttpServer.cs — Fire-and-forget Task.Run silently suppresses unhandled exceptions
 
-**File:** `src/FingerprintAgent/Adapters/MockScannerAdapter.cs:44-73`
-**Issue:** `GenerateMockPng` uses a nested `using` block for `graphics` (line 47) while
-the parent `using` block for `bitmap` (line 46) is still active. `Graphics.FromImage`
-creates a GDI+ Graphics object tied to the bitmap. Disposing Graphics via the inner
-`using` at line 47 *before* `bitmap.Save()` is called at line 69 can cause
-`ArgumentException: Graphics object is not valid` or a null image if GDI+ has already
-internalized the Graphics state. The Bitmap.Save() call at line 69 should execute
-before Graphics is disposed.
-
+**File:** `src/FingerprintAgent/Api/HttpServer.cs:103-105`
+**Issue:** `Task.Run(() => HandleRequest(context), ct)` is called as fire-and-forget (CS4014 is explicitly suppressed). While `HandleRequest` has a try-catch at lines 124-169, if an exception occurs after the catch block (e.g., in `_cors.ApplyCorsHeaders` at line 159), or if the catch block itself throws, the exception becomes unobserved and is silently swallowed by the TaskScheduler. This makes debugging production issues very difficult.
 **Fix:**
 ```csharp
-private static byte[] GenerateMockPng(int width, int height)
-{
-    using (var bitmap = new Bitmap(width, height))
-    using (var graphics = Graphics.FromImage(bitmap))
-    {
-        graphics.Clear(Color.LightGray);
-
-        using (var fillBrush = new SolidBrush(Color.FromArgb(50, 100, 150)))
-        {
-            graphics.FillEllipse(fillBrush, 10, 10, width - 20, height - 20);
-        }
-
-        using (var borderPen = new Pen(Color.DarkGray, 2))
-        {
-            graphics.DrawRectangle(borderPen, 1, 1, width - 2, height - 2);
-        }
-
-        using (var labelFont = new Font("Consolas", 10))
-        using (var labelBrush = new SolidBrush(Color.Black))
-        {
-            graphics.DrawString("MOCK SCANNER", labelFont, labelBrush, 10, 10);
-        }
-
-        // Bitmap operations must complete BEFORE Graphics is disposed
-        using (var ms = new MemoryStream())
-        {
-            bitmap.Save(ms, ImageFormat.Png);
-            return ms.ToArray();
-        }
-    } // Graphics is disposed here, after all operations are complete
-}
+#pragma warning disable CS4014
+var handlerTask = Task.Run(() => HandleRequest(context), ct);
+// Consider tracking or log unhandled exceptions:
+handlerTask.ContinueWith(t => {
+    if (t.IsFaulted) {
+        _logger?.Error(correlationId, $"Unhandled request error: {t.Exception}");
+    }
+}, TaskContinuationOptions.OnlyOnFaulted);
+#pragma warning restore CS4014
 ```
 
----
-
-### WR-02: ConfigLoader error filtering by localized message string is fragile
+### WR-02: ConfigLoader.cs:50-58 — Exception filter still relies on message string matching
 
 **File:** `src/FingerprintAgent/Configuration/ConfigLoader.cs:50-58`
-**Issue:** The catch clause filters exceptions by checking `ex.Message.IndexOf("JSON")` or
-`ex.Message.IndexOf("parse")`. This is fragile because .NET exception messages are
-localized. On a non-English Windows system (e.g., Vietnamese, Chinese), JSON parsing
-exceptions may contain localized text that does not match these English substrings.
-The wrapping will not occur and the raw exception propagates without the helpful
-context that config.json is invalid JSON.
-
-**Fix:** Catch `JsonReaderException` explicitly, or catch all exceptions from the
-json file load and wrap them unconditionally:
+**Issue:** The `catch (Exception ex) when (ex.Message.IndexOf("JSON", ...) >= 0 ...)` filter still relies on error message string matching. While `StringComparison.OrdinalIgnoreCase` is now used (making the search culture-invariant at the byte/ordinal level), the filter could miss exceptions that don't contain "JSON" or "parse" in their message on some system configurations. The more robust approach is to catch specific exception types.
+**Fix:**
 ```csharp
-catch (Exception ex) when (ex is JsonReaderException || ex.InnerException is JsonReaderException)
+catch (JsonReaderException ex)
 {
     throw new FormatException(
         $"config.json at {configPath} contains invalid JSON. " +
         $"Please verify the file is valid JSON.",
         ex);
 }
-catch (Exception ex)
+catch (Exception ex) when (
+    ex.InnerException is JsonReaderException ||
+    ex.GetType().Name.Contains("Json", StringComparison.OrdinalIgnoreCase))
 {
-    // Catch all remaining exceptions from file read/parse and wrap with context
     throw new FormatException(
-        $"config.json at {configPath} could not be loaded: {ex.Message}. " +
-        $"Please verify the file exists and is valid JSON.",
+        $"config.json at {configPath} contains invalid JSON. " +
+        $"Please verify the file is valid JSON.",
         ex);
 }
 ```
 
----
+### WR-03: Program.cs:45-51 — CancelKeyPress handler sets e.Cancel but no timeout guard
 
-### WR-03: FingerprintAgentService.OnStop re-assigns shutdownError, losing root cause
-
-**File:** `src/FingerprintAgent/Service/FingerprintAgentService.cs:57-123`
-**Issue:** The pattern `if (shutdownError == null) shutdownError = ex; else` sets
-`shutdownError = ex` unconditionally, so only the *last* exception during shutdown
-is reported (lines 69, 79, 89, 99). If stopping fails at multiple steps, the root
-cause is overwritten by a subsequent disposal error, making debugging difficult.
-
-**Fix:** Always capture the first error, not the last:
+**File:** `src/FingerprintAgent/Program.cs:45-51`
+**Issue:** The `CancelKeyPress` handler sets `e.Cancel = true` to prevent immediate termination, but `exitEvent.WaitOne()` has no timeout. If something prevents the event from being set (e.g., a bug in `StopConsole`), the console would hang forever with no indication of the problem.
+**Fix:**
 ```csharp
-catch (Exception ex)
+if (!exitEvent.WaitOne(TimeSpan.FromSeconds(10)))
 {
-    if (shutdownError == null)
-        shutdownError = ex;
-    _logger?.Error(stopCid, $"Error stopping HTTP server: {ex.Message}");
+    Console.WriteLine("Shutdown timed out, forcing exit...");
+}
+```
+
+### WR-04: CaptureResult.cs — Mutable POCO with public setters
+
+**File:** `src/FingerprintAgent/Adapters/CaptureResult.cs`
+**Issue:** `CaptureResult` is a plain old C# object with all public setters. As a data-transfer object that crosses adapter boundaries, immutability (using `init` setters or a constructor) would make the intent clearer and prevent accidental mutation after creation.
+**Fix:**
+```csharp
+public class CaptureResult
+{
+    public bool IsSuccess { get; init; }
+    public byte[] ImageBytes { get; init; }
+    public string MimeType { get; init; }
+    public string CapturedAt { get; init; }
+    public string DeviceId { get; init; }
+    public string VerificationData { get; init; }
+    public string ErrorMessage { get; init; }
+    public int Width { get; init; }
+    public int Height { get; init; }
 }
 ```
 
 ---
 
-## Previously Reported Issues — Status
+## Info
 
-| ID | Title | Status |
-|----|-------|--------|
-| CR-01 | Fire-and-forget task + hard timeout | ✅ Fixed (timeout 5s→30s) |
-| CR-02 | CaptureResult.ImageBytes null dereference | ✅ Fixed (line 77 null-coalescing) |
-| WR-01 | Nullable logger used throughout | ⏭ Skipped (architectural change) |
-| WR-02 | OnStop catches all exceptions silently | ⚠️ Still present (WR-03 above) |
-| WR-03 | Stop/Dispose double-dispose risk | ⚠️ Still present |
-| WR-04 | ApplyCorsHeaders called in exception path | ⚠️ Still present |
-| WR-05 | GetStringArray adds null to list | ✅ Fixed (null check at line 139) |
-| WR-06 | CaptureRequest no length validation | ⚠️ Still present |
-| WR-07 | Base64 redaction regex bypass | ⚠️ Still present |
-| WR-08 | CorsMiddlewareTests nested IDisposable | ⚠️ Still present |
-| WR-09 | Hardcoded port 5043 in tests | ✅ Fixed (TcpListener used) |
-| IN-01 | Unreachable code after Environment.Exit | ⚠️ Still present |
-| IN-02 | Duplicate response-writing logic | ⚠️ Still present |
-| IN-03 | ConfigLoaderTests.Dispose silent catch | ⚠️ Still present |
-| IN-04 | AgentLogger no async file I/O | ⚠️ Still present |
-| IN-05 | GenerateCorrelationId substring | ⚠️ Still present |
-| IN-06 | Environment.UserInteractive mode detection | ⚠️ Still present |
+### IN-01: FingerprintAgentService.cs:126-140 — Redundant SecurityException catch block
+
+**File:** `src/FingerprintAgent/Service/FingerprintAgentService.cs:132-136`
+**Issue:** `catch (SecurityException securityEx)` is listed before `catch (Exception ex)`. Since `SecurityException` derives from `SystemException` which derives from `Exception`, the specific `SecurityException` catch is unreachable — all `SecurityException` instances will be caught by the general `Exception` catch. The specific catch doesn't hurt (it's just dead code), but it's misleading.
+**Fix:** Remove the `catch (SecurityException securityEx)` block entirely, since both branches do the same thing (debug-print the message).
+
+### IN-02: HttpServer.cs:84-90 — Silent AggregateException catch in Stop()
+
+**File:** `src/FingerprintAgent/Api/HttpServer.cs:84-90`
+**Issue:** `_workerTask?.Wait(TimeSpan.FromSeconds(30))` is wrapped in a try-catch that silently catches `AggregateException`. If `Wait()` throws an `AggregateException` (which it would if any of the inner tasks threw), the exception is silently swallowed. This could mask issues during shutdown.
+**Fix:**
+```csharp
+try
+{
+    _workerTask?.Wait(TimeSpan.FromSeconds(30));
+}
+catch (AggregateException ae)
+{
+    // Log but don't rethrow — we want graceful shutdown even on in-flight errors
+    foreach (var e in ae.InnerExceptions)
+    {
+        _logger?.Error(stopCid, $"Error during shutdown: {e.Message}");
+    }
+}
+```
+
+### IN-03: AgentLogger.cs:114-128 — Base64 redaction regex has bypass vector
+
+**File:** `src/FingerprintAgent/Logging/AgentLogger.cs:114-128`
+**Issue:** `RedactIfImageData` trims the message and only applies the Base64 pattern match if `trimmed.Length > 40`. An attacker could truncate a base64 string to ≤40 characters to bypass the regex, then rely on downstream logging or log viewers to re-render it in a context where the full data is visible.
+**Fix:** The length check is a pragmatic performance trade-off. Consider logging a warning when any base64-like string >20 chars is seen, or always apply the regex regardless of length (with a pre-check for performance).
+
+### IN-04: HttpServer.cs:158-159 — CORS headers applied even on 404/500 responses
+
+**File:** `src/FingerprintAgent/Api/HttpServer.cs:158-159`
+**Issue:** `_cors.ApplyCorsHeaders(context.Response, origin)` is called after every handler completes (including 404 and 500 responses). This is actually correct CORS behavior — browsers require CORS headers on all responses. However, the current structure applies CORS headers *after* the handler runs, which means if the handler sets its own `ContentType`, the CORS headers come after. More importantly, on a 404 the response body is `"{\"error\":\"Not found\"}"` but `ContentType` is set to `application/json` before the CORS headers are applied, which is fine. This is informational only.
 
 ---
 
-_Reviewed: 2026-07-29T00:30:00Z_
+## Previous Warnings Status
+
+| ID | File | Issue | Status |
+|----|------|-------|--------|
+| WR-01 (prev) | MockScannerAdapter.cs:44-73 | Graphics.Dispose() before Bitmap.Save() | **FIXED** — `ms.ToArray()` called inside inner `using` before outer disposal |
+| WR-02 (prev) | ConfigLoader.cs:50-58 | English "JSON" substring filter | **PARTIALLY FIXED** — `OrdinalIgnoreCase` used but message matching still fragile (see WR-02) |
+| WR-03 (prev) | FingerprintAgentService.cs:69-99 | shutdownError overwritten | **UNCHANGED/INTENTIONAL** — Appears deliberate; only last error reported |
+
+---
+
+_Reviewed: 2026-07-29_
 _Reviewer: the agent (gsd-code-reviewer)_
 _Depth: standard_
