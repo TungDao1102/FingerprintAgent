@@ -9,7 +9,7 @@
     <PlatformTarget>x86</PlatformTarget>
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
-    <ZKTecoSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\ZKTeco\zkfp2.dll')">true</ZKTecoSdkPresent>
+    <ZKTecoSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\ZKTeco\libzkfp.dll')">true</ZKTecoSdkPresent>
     <DigitalPersonaSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\DigitalPersona\DPFPDevNET.dll')">true</DigitalPersonaSdkPresent>
     <FutronicSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\Futronic\ftrScanAPI.dll')">true</FutronicSdkPresent>
   </PropertyGroup>
