@@ -85,7 +85,12 @@ namespace FingerprintAgent.Adapters
                 return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "DigitalPersona scanner not initialized. Call Initialize() first.");
             }
 
-            _captureEvent = new ManualResetEvent(false);
+            // Use a LOCAL wait handle per call to prevent the callback from racing
+            // with a subsequent Scan() call's reassignment of _captureEvent.
+            // The callback (OnComplete) signals _captureEvent which, at the moment
+            // it fires, holds the correct local handle for this call.
+            var waitHandle = new ManualResetEvent(false);
+            _captureEvent = waitHandle;
             _capturedSample = null;
             _vendorErrorCode = "NONE";
 
@@ -99,7 +104,7 @@ namespace FingerprintAgent.Adapters
                 return CaptureResult.Fail("CAPTURE_ERROR", $"DigitalPersona:{_vendorErrorCode}");
             }
 
-            bool signaled = _captureEvent.WaitOne(5000);
+            bool signaled = waitHandle.WaitOne(3000);
             _capture.StopCapture();
 
             if (!signaled || _capturedSample == null)
