@@ -96,8 +96,8 @@ namespace FingerprintAgent.Adapters
             _device = deviceResult.Value;
             _width = _device!.Width;
             _height = _device!.Height;
-            _deviceId = _device!.SerialNumber ?? "ZKTeco-unknown";
-            _model = _device!.Name ?? "ZKTeco Device";
+            _deviceId = !string.IsNullOrEmpty(_device!.SerialNumber) ? _device.SerialNumber : _deviceId;
+            _model = !string.IsNullOrEmpty(_device!.Name) ? _device.Name : _model;
             _isConnected = true;
             return true;
         }
@@ -132,11 +132,13 @@ namespace FingerprintAgent.Adapters
                     // Convert BMP -> PNG via GDI+. NO pixel inversion — ZKTeco grayscale is
                     // conventional (0=white, 255=dark ridges) per D-10.
                     byte[] pngBytes;
-                    using (var bmp = new Bitmap(new MemoryStream(captureResult.Value!.Bitmap)))
-                    using (var ms = new MemoryStream())
+                    byte[] bmpBytes = captureResult.Value!.Bitmap;
+                    using (var ms = new MemoryStream(bmpBytes))
+                    using (var bmp = new Bitmap(ms))
+                    using (var outMs = new MemoryStream())
                     {
-                        bmp.Save(ms, ImageFormat.Png);
-                        pngBytes = ms.ToArray();
+                        bmp.Save(outMs, ImageFormat.Png);
+                        pngBytes = outMs.ToArray();
                     }
 
                     // SHA-256 verification data
@@ -201,15 +203,21 @@ namespace FingerprintAgent.Adapters
 
         public void Dispose()
         {
+            Exception disposalEx = null;
             if (_device != null)
             {
-                try { _device.Dispose(); } catch { /* best-effort */ }
+                try { _device?.Dispose(); }
+                catch (Exception ex) { disposalEx = ex; }
                 _device = null;
             }
             _isConnected = false;
             // ZkTecoFingerHost.Close() is a static teardown — call at service shutdown.
             // The native library is reference-counted so it is safe to call multiple times.
-            try { ZkTecoFingerHost.Close(); } catch { /* best-effort */ }
+            try { ZkTecoFingerHost.Close(); }
+            catch (Exception ex) { disposalEx ??= ex; }
+
+            if (disposalEx != null)
+                System.Diagnostics.Debug.WriteLine($"[ZKTecoAdapter] Disposal error: {disposalEx.Message}");
         }
     }
 }
