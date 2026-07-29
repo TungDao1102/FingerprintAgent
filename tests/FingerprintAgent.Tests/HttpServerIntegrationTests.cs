@@ -16,16 +16,23 @@ namespace FingerprintAgent.Tests
         private readonly HttpServer _server;
         private readonly MockScannerAdapter _scanner;
         private readonly HttpClient _client;
+        private readonly int _port;
         private bool _disposed;
 
         public HttpServerIntegrationTests()
         {
+            // Use TcpListener to find an available port to avoid conflicts
+            var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            _port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+
             _scanner = new MockScannerAdapter();
-            _server = new HttpServer("127.0.0.1", 5043, _scanner);
+            _server = new HttpServer("127.0.0.1", _port, _scanner);
             _server.Start();
 
             _client = new HttpClient();
-            _client.BaseAddress = new Uri("http://127.0.0.1:5043");
+            _client.BaseAddress = new Uri($"http://127.0.0.1:{_port}");
             _client.Timeout = TimeSpan.FromSeconds(5);
         }
 
