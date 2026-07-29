@@ -140,7 +140,11 @@ namespace FingerprintAgent.Adapters
                     System.Drawing.Imaging.ImageLockMode.WriteOnly,
                     System.Drawing.Imaging.PixelFormat.Format8bppIndexed);
 
-                Marshal.Copy(raw, 0, bitmapData.Scan0, raw.Length);
+                int stride = bitmapData.Stride;
+                for (int row = 0; row < height; row++)
+                {
+                    Marshal.Copy(raw, row * width, bitmapData.Scan0 + row * stride, width);
+                }
                 bitmap.UnlockBits(bitmapData);
 
                 using (var ms = new MemoryStream())

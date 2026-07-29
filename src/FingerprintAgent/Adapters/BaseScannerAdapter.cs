@@ -87,7 +87,11 @@ namespace FingerprintAgent.Adapters
                     ImageLockMode.WriteOnly,
                     PixelFormat.Format8bppIndexed);
 
-                Marshal.Copy(raw, 0, bitmapData.Scan0, raw.Length);
+                int stride = bitmapData.Stride;
+                for (int y = 0; y < height; y++)
+                {
+                    Marshal.Copy(raw, y * width, bitmapData.Scan0 + y * stride, width);
+                }
                 bitmap.UnlockBits(bitmapData);
 
                 using (var ms = new MemoryStream())
