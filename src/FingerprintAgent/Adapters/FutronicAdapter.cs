@@ -91,6 +91,9 @@ namespace FingerprintAgent.Adapters
             {
                 uint err = FutronicSDK.ftrScanGetLastError();
                 _vendorErrorCode = MapErrorCode(err);
+                FutronicSDK.ftrScanCloseDevice(_device);
+                _device = IntPtr.Zero;
+                _isConnected = false;
                 return CaptureResult.Fail("CAPTURE_ERROR", $"Futronic:{_vendorErrorCode}");
             }
 

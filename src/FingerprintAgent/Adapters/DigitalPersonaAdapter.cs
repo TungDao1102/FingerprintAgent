@@ -126,8 +126,10 @@ namespace FingerprintAgent.Adapters
             }
             finally
             {
-                if (bmp != null) bmp.Dispose();
-                if (ptr != IntPtr.Zero) DestroyHbitmap(ptr);
+                // Bitmap.FromHbitmap(ptr) creates a Bitmap that owns the HANDLE.
+                // Calling bmp.Dispose() internally calls GDI DeleteObject(ptr).
+                // Do NOT call DestroyHbitmap separately — that would be a double-delete.
+                bmp?.Dispose();
             }
 
             string verificationData;
