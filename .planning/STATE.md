@@ -4,11 +4,11 @@ milestone: v1.0
 milestone_name: Release
 status: unknown
 stopped_at: Phase 02 context gathered
-last_updated: "2026-07-29T03:35:37.826Z"
+last_updated: "2026-07-29T06:34:59.589Z"
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 4
+  total_plans: 8
   completed_plans: 4
   percent: 50
 ---
@@ -20,7 +20,7 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 **Core value:** Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhất một trong các máy quét vân tay phổ biến, và trả về ảnh PNG đáng tin cậy cho ứng dụng web qua HTTP API địa phương.
-**Current focus:** Phase 1 — Foundation — Windows Service + HTTP API skeleton
+**Current focus:** Phase 02 — multi-vendor-scanner-adapters
 
 ## Current Phase
 

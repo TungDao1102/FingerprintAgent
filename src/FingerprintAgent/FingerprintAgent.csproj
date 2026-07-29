@@ -1,13 +1,29 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
     <RootNamespace>FingerprintAgent</RootNamespace>
     <AssemblyName>FingerprintAgent</AssemblyName>
     <PlatformTarget>x86</PlatformTarget>
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
+    <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
+    <Reference Include="SecuGen.FDxSDKPro.Windows">
+      <HintPath>$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.ServiceProcess" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.ComponentModel.DataAnnotations" />
+  </ItemGroup>
 
   <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
     <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
