@@ -10,6 +10,7 @@
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
     <ZKTecoSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\ZKTeco\zkfp2.dll')">true</ZKTecoSdkPresent>
+    <DigitalPersonaSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\DigitalPersona\DPFPDevNET.dll')">true</DigitalPersonaSdkPresent>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(ZKTecoSdkPresent)' == 'true'">
@@ -20,9 +21,19 @@
     <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(DigitalPersonaSdkPresent)' == 'true'">
+    <DefineConstants>$(DefineConstants);DIGITALPERSONA_SDK_PRESENT</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
     <Reference Include="SecuGen.FDxSDKPro.Windows">
       <HintPath>$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DigitalPersonaSdkPresent)' == 'true'">
+    <Reference Include="DPFPDevNET">
+      <HintPath>$(MSBuildProjectDirectory)\..\..\lib\DigitalPersona\DPFPDevNET.dll</HintPath>
     </Reference>
   </ItemGroup>
 
