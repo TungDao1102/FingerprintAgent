@@ -203,7 +203,7 @@ namespace FingerprintAgent.Adapters
 
         public void Dispose()
         {
-            Exception disposalEx = null;
+            Exception? disposalEx = null;
             if (_device != null)
             {
                 try { _device?.Dispose(); }
