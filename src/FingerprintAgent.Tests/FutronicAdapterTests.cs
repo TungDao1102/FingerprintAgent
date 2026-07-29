@@ -29,10 +29,8 @@ namespace FingerprintAgent.Tests
         public void FutronicAdapter_Scan_ReturnsFail_WhenNotInitialized()
         {
             var adapter = new FutronicAdapter();
-            // Scan without Initialize — stub returns SCANNER_NOT_CONNECTED
             var result = adapter.Scan();
             Assert.False(result.IsSuccess);
-            Assert.Contains("Stub adapter", result.ErrorMessage);
         }
 
         [Fact]

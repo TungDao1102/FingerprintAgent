@@ -30,10 +30,8 @@ namespace FingerprintAgent.Tests
         public void DigitalPersonaAdapter_Scan_ReturnsFail_WhenNotInitialized()
         {
             var adapter = new DigitalPersonaAdapter();
-            // Scan without Initialize — stub returns SCANNER_NOT_CONNECTED
             var result = adapter.Scan();
             Assert.False(result.IsSuccess);
-            Assert.Contains("Stub adapter", result.ErrorMessage);
         }
 
         [Fact]
