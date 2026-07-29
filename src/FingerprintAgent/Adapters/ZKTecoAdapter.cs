@@ -17,7 +17,7 @@ namespace FingerprintAgent.Adapters
     /// AcquireFingerprintAsync is wrapped with CancellationToken for a safety-net timeout;
     /// the real budget (~3s per adapter, 10s total) is enforced by ScannerManager (D-06).
     /// </summary>
-    public sealed class ZKTecoAdapter : IScannerAdapter
+    public sealed class ZKTecoAdapter : IScannerAdapter, IDisposable
     {
         private ZkFingerPrintDevice? _device;
         private int _width;
