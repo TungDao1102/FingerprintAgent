@@ -20,7 +20,7 @@ namespace FingerprintAgent.Tests
         /// <summary>
         /// Wildcard CORS mode test fixture - shared across all WildcardMode tests.
         /// </summary>
-        private class WildcardModeFixture : IDisposable
+        public class WildcardModeFixture : IDisposable
         {
             public HttpServer Server { get; }
             public MockScannerAdapter Scanner { get; }
@@ -56,7 +56,7 @@ namespace FingerprintAgent.Tests
         /// <summary>
         /// Allowlist CORS mode test fixture - shared across all AllowlistMode tests.
         /// </summary>
-        private class AllowlistModeFixture : IDisposable
+        public class AllowlistModeFixture : IDisposable
         {
             public HttpServer Server { get; }
             public MockScannerAdapter Scanner { get; }
@@ -107,7 +107,7 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task Preflight_WithOrigin_Returns204()
             {
-                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
+                var request = new HttpRequestMessage(new HttpMethod("OPTIONS"), "/api/capture");
                 request.Headers.Add("Origin", "http://example.com");
 
                 var response = await _fixture.Client.SendAsync(request);
@@ -119,7 +119,7 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task Preflight_WithoutOrigin_ReturnsNotFound()
             {
-                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
+                var request = new HttpRequestMessage(new HttpMethod("OPTIONS"), "/api/capture");
 
                 var response = await _fixture.Client.SendAsync(request);
 
@@ -129,7 +129,7 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task ActualRequest_SetsAsterisk()
             {
-                var request = new HttpRequestMessage(HttpMethod.GET, "/health");
+                var request = new HttpRequestMessage(new HttpMethod("GET"), "/health");
                 request.Headers.Add("Origin", "http://example.com");
 
                 var response = await _fixture.Client.SendAsync(request);
@@ -156,7 +156,7 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task Preflight_AllowedOrigin_Returns204()
             {
-                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
+                var request = new HttpRequestMessage(new HttpMethod("OPTIONS"), "/api/capture");
                 request.Headers.Add("Origin", "http://trusted.com");
 
                 var response = await _fixture.Client.SendAsync(request);
@@ -169,7 +169,7 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task Preflight_DeniedOrigin_Returns403()
             {
-                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
+                var request = new HttpRequestMessage(new HttpMethod("OPTIONS"), "/api/capture");
                 request.Headers.Add("Origin", "http://evil.com");
 
                 var response = await _fixture.Client.SendAsync(request);
@@ -180,7 +180,7 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task ActualRequest_AllowedOrigin_SetsOriginHeader()
             {
-                var request = new HttpRequestMessage(HttpMethod.GET, "/health");
+                var request = new HttpRequestMessage(new HttpMethod("GET"), "/health");
                 request.Headers.Add("Origin", "http://trusted.com");
 
                 var response = await _fixture.Client.SendAsync(request);
