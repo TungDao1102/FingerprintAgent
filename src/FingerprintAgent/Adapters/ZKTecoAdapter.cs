@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -93,10 +94,10 @@ namespace FingerprintAgent.Adapters
             }
 
             _device = deviceResult.Value;
-            _width = _device.Width;
-            _height = _device.Height;
-            _deviceId = _device.SerialNumber ?? "ZKTeco-unknown";
-            _model = _device.Name ?? "ZKTeco Device";
+            _width = _device!.Width;
+            _height = _device!.Height;
+            _deviceId = _device!.SerialNumber ?? "ZKTeco-unknown";
+            _model = _device!.Name ?? "ZKTeco Device";
             _isConnected = true;
             return true;
         }

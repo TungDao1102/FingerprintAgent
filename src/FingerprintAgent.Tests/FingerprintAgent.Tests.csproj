@@ -3,6 +3,11 @@
     <TargetFramework>net48</TargetFramework>
     <IsPackable>false</IsPackable>
     <PlatformTarget>x86</PlatformTarget>
+    <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
+    <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
