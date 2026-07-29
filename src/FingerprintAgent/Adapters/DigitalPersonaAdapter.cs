@@ -118,10 +118,14 @@ namespace FingerprintAgent.Adapters
             IntPtr ptr = IntPtr.Zero;
             Bitmap bmp = null;
             byte[] png;
+            int bmpWidth = 0;
+            int bmpHeight = 0;
             try
             {
                 conv.ConvertToPicture(_capturedSample, ref ptr);
                 bmp = Bitmap.FromHbitmap(ptr);
+                bmpWidth = bmp.Width;
+                bmpHeight = bmp.Height;
                 png = BitmapToPng(bmp);
             }
             catch (Exception ex)
@@ -153,8 +157,8 @@ namespace FingerprintAgent.Adapters
                 DeviceId = DeviceId,
                 VerificationData = verificationData,
                 ErrorMessage = null,
-                Width = 0,
-                Height = 0
+                Width = bmpWidth,
+                Height = bmpHeight
             };
         }
 
