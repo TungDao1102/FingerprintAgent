@@ -153,5 +153,126 @@ namespace FingerprintAgent.Tests
             var result = sm.Scan();
             Assert.True(result.IsSuccess, "MockScannerAdapter should succeed in MockMode");
         }
+
+        #region Non-Mock Fallback Tests (WR-07)
+
+        [Fact]
+        public void ScannerManager_PriorityFallback_FirstFailsSecondSucceeds()
+        {
+            var failAdapter = new Mock<IScannerAdapter>();
+            failAdapter.Setup(a => a.Initialize()).Returns(false);
+            failAdapter.Setup(a => a.IsConnected).Returns(false);
+            failAdapter.Setup(a => a.VendorErrorCode).Returns("ERROR");
+
+            var successAdapter = new Mock<IScannerAdapter>();
+            successAdapter.Setup(a => a.Initialize()).Returns(true);
+            successAdapter.Setup(a => a.IsConnected).Returns(true);
+            successAdapter.Setup(a => a.DeviceId).Returns("success-device");
+            successAdapter.Setup(a => a.Model).Returns("Success Model");
+            successAdapter.Setup(a => a.VendorErrorCode).Returns("NONE");
+            successAdapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            {
+                IsSuccess = true,
+                ImageBytes = new byte[] { 0, 1, 2 },
+                MimeType = "image/png",
+                CapturedAt = DateTime.UtcNow.ToString("O"),
+                DeviceId = "success-device",
+                ErrorMessage = null,
+                Width = 100,
+                Height = 100
+            });
+
+            var sm = new ScannerManager(
+                new[] { failAdapter.Object, successAdapter.Object },
+                logger: null);
+
+            var result = sm.Scan();
+            Assert.True(result.IsSuccess);
+            Assert.Equal("success-device", result.DeviceId);
+        }
+
+        [Fact]
+        public void ScannerManager_PriorityFallback_AllAdaptersFail_ReturnsFailure()
+        {
+            var failAdapter = new Mock<IScannerAdapter>();
+            failAdapter.Setup(a => a.Initialize()).Returns(false);
+            failAdapter.Setup(a => a.VendorErrorCode).Returns("ERR_1");
+
+            var sm = new ScannerManager(
+                new[] { failAdapter.Object },
+                logger: null);
+
+            var result = sm.Scan();
+            Assert.False(result.IsSuccess);
+        }
+
+        [Fact]
+        public void ScannerManager_BackoffRetry_ReconnectsOnDisconnect()
+        {
+            var adapter = new Mock<IScannerAdapter>();
+            int initCallCount = 0;
+            adapter.Setup(a => a.Initialize()).Returns(() =>
+            {
+                initCallCount++;
+                return initCallCount > 1;
+            });
+            adapter.Setup(a => a.IsConnected).Returns(() => initCallCount > 1);
+            adapter.Setup(a => a.VendorErrorCode).Returns("NONE");
+            adapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            {
+                IsSuccess = true,
+                ImageBytes = new byte[] { 0, 1, 2 },
+                MimeType = "image/png",
+                CapturedAt = DateTime.UtcNow.ToString("O"),
+                DeviceId = "test-device",
+                ErrorMessage = null,
+                Width = 100,
+                Height = 100
+            });
+
+            var sm = new ScannerManager(
+                new[] { adapter.Object },
+                logger: null);
+
+            var result = sm.Scan();
+            Assert.True(result.IsSuccess);
+        }
+
+        [Fact]
+        public void ScannerManager_BackoffRetry_FallsThroughWhenBackoffFails()
+        {
+            var disconnected = new Mock<IScannerAdapter>();
+            disconnected.Setup(a => a.Initialize()).Returns(false);
+            disconnected.Setup(a => a.IsConnected).Returns(false);
+            disconnected.Setup(a => a.VendorErrorCode).Returns("DISCONNECTED");
+
+            var successAdapter = new Mock<IScannerAdapter>();
+            successAdapter.Setup(a => a.Initialize()).Returns(true);
+            successAdapter.Setup(a => a.IsConnected).Returns(true);
+            successAdapter.Setup(a => a.DeviceId).Returns("fallback-device");
+            successAdapter.Setup(a => a.VendorErrorCode).Returns("NONE");
+            successAdapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            {
+                IsSuccess = true,
+                ImageBytes = new byte[] { 0, 1, 2 },
+                MimeType = "image/png",
+                CapturedAt = DateTime.UtcNow.ToString("O"),
+                DeviceId = "fallback-device",
+                ErrorMessage = null,
+                Width = 100,
+                Height = 100
+            });
+
+            // First call: disconnected adapter → backoff fails → falls through to successAdapter
+            var sm = new ScannerManager(
+                new[] { disconnected.Object, successAdapter.Object },
+                logger: null);
+
+            var result = sm.Scan();
+            Assert.True(result.IsSuccess);
+            Assert.Equal("fallback-device", result.DeviceId);
+        }
+
+        #endregion
     }
 }

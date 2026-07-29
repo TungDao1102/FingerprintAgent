@@ -94,6 +94,18 @@ namespace FingerprintAgent.Adapters
             _adapters = vendorList.ToArray();
         }
 
+        /// <summary>
+        /// Internal constructor for testing: inject adapters directly, bypassing config-based resolution.
+        /// Allows ScannerManagerTests to exercise priority fallback and backoff logic.
+        /// </summary>
+        internal ScannerManager(IScannerAdapter[] adapters, AgentLogger logger)
+        {
+            _adapters = adapters ?? throw new ArgumentNullException(nameof(adapters));
+            _logger = logger;
+            _mockMode = false;
+            _cts = new CancellationTokenSource();
+        }
+
         private static IScannerAdapter CreateAdapter(string vendorName)
         {
             switch (vendorName)
