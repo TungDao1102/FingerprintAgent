@@ -89,7 +89,7 @@ namespace FingerprintAgent.Adapters
             bool ok = FutronicSDK.ftrScanGetImage(_device, 4, rawBuffer);
             if (!ok)
             {
-                uint err = FutronicSDK.ftrScanGetLastError();
+                uint err = FutronicSDK.ftrScanGetLastError(_device);
                 _vendorErrorCode = MapErrorCode(err);
                 FutronicSDK.ftrScanCloseDevice(_device);
                 _device = IntPtr.Zero;
