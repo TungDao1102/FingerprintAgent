@@ -25,11 +25,6 @@ namespace FingerprintAgent.Adapters
 
         public CaptureResult Scan()
         {
-            if (!InitializeDevice())
-            {
-                return CaptureResult.Fail("SCANNER_NOT_CONNECTED", _lastError ?? "Device initialization failed");
-            }
-
             byte[] raw;
             try
             {
