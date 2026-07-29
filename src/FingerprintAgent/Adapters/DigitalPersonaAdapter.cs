@@ -16,7 +16,7 @@ namespace FingerprintAgent.Adapters
     /// Digital Persona U.are.U scanner adapter using DPUruNet wrapper.
     /// Wraps the event-driven capture API with ManualResetEvent for synchronous Scan().
     /// </summary>
-    public class DigitalPersonaAdapter : IScannerAdapter, CaptureEventHandler
+    public class DigitalPersonaAdapter : IScannerAdapter, CaptureEventHandler, IDisposable
     {
         private Reader _reader;
         private Capture _capture;
@@ -213,6 +213,14 @@ namespace FingerprintAgent.Adapters
             }
             return ex.GetType().Name;
         }
+
+        public void Dispose()
+        {
+            _capture?.Dispose();
+            _capture = null;
+            _reader?.Dispose();
+            _reader = null;
+        }
     }
 }
 #else
@@ -220,7 +228,7 @@ namespace FingerprintAgent.Adapters
 // Allows compilation and unit testing without the vendor SDK DLL present.
 namespace FingerprintAgent.Adapters
 {
-    public class DigitalPersonaAdapter : IScannerAdapter
+    public class DigitalPersonaAdapter : IScannerAdapter, IDisposable
     {
         public bool IsConnected => false;
         public string DeviceId => "stub-device";
@@ -236,6 +244,10 @@ namespace FingerprintAgent.Adapters
         public CaptureResult Scan()
         {
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "DigitalPersona: Stub adapter — SDK not present");
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
