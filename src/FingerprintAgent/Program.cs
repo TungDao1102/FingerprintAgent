@@ -50,7 +50,10 @@ namespace FingerprintAgent
                 exitEvent.Set();
             };
 
-            exitEvent.WaitOne();
+            if (!exitEvent.WaitOne(TimeSpan.FromSeconds(10)))
+            {
+                Console.WriteLine("Shutdown timed out, forcing exit...");
+            }
 
             Console.WriteLine("Service stopped.");
         }
