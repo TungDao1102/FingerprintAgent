@@ -71,6 +71,11 @@
 - Native P/Invoke declarations cho Futronic
 - Adapter-specific setup notes (SCANNER_SETUP.md)
 
+**Plans:**
+- [ ] 02-01-PLAN.md — IScannerAdapter extension + SecuGenAdapter (SCAN-01, SCAN-05)
+- [ ] 02-02-PLAN.md — DigitalPersonaAdapter + FutronicAdapter (SCAN-02, SCAN-03, SCAN-07)
+- [ ] 02-03-PLAN.md — ScannerManager + wiring (SCAN-04, SCAN-05)
+
 ---
 
 ## Phase 3: Resilience & Runtime Reconfiguration
