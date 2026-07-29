@@ -117,9 +117,9 @@ namespace FingerprintAgent.Adapters
                 try
                 {
                     // AcquireFingerprintAsync wraps the blocking native call in Task.Run.
-                    // Blocking on .Result here is safe — no thread-pool deadlock risk in the
-                    // Windows Service hosting context (per SCAN-09 async/sync mismatch review fix).
-                    var captureResult = _device.AcquireFingerprintAsync(cts.Token).Result;
+                    // GetAwaiter().GetResult() avoids the AggregateException wrapping of .Result
+                    // and reduces deadlock risk in SynchronizationContext-bound hosts.
+                    var captureResult = _device.AcquireFingerprintAsync(cts.Token).GetAwaiter().GetResult();
 
                     if (!captureResult.IsSuccess)
                     {
@@ -162,17 +162,9 @@ namespace FingerprintAgent.Adapters
                         Height = _height
                     };
                 }
-                catch (AggregateException ae)
+                catch (OperationCanceledException)
                 {
-                    ae.Handle(ex =>
-                    {
-                        if (ex is OperationCanceledException || ex is TaskCanceledException)
-                        {
-                            _vendorErrorCode = "CAPTURE_TIMEOUT";
-                            return true;
-                        }
-                        return false;
-                    });
+                    _vendorErrorCode = "CAPTURE_TIMEOUT";
                     return CaptureResult.Fail("CAPTURE_TIMEOUT",
                         "ZKTeco: capture timeout — no finger detected within safety-net deadline");
                 }
