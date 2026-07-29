@@ -4,7 +4,20 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>FingerprintAgent</RootNamespace>
     <AssemblyName>FingerprintAgent</AssemblyName>
+    <PlatformTarget>x86</PlatformTarget>
+    <RuntimeIdentifier>win-x86</RuntimeIdentifier>
+    <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
+    <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
+    <Reference Include="SecuGen.FDxSDKPro.Windows">
+      <HintPath>$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll</HintPath>
+    </Reference>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
