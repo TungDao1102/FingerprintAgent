@@ -53,8 +53,15 @@ namespace FingerprintAgent.Api
                 TaskScheduler.Default);
         }
 
+        /// <summary>
+        /// Stops the HTTP server and waits up to 30 seconds for in-flight requests to drain.
+        /// Safe to call multiple times (idempotent) - subsequent calls return immediately.
+        /// </summary>
         public void Stop()
         {
+            if (_disposed)
+                return;
+
             try
             {
                 _cts?.Cancel();
@@ -122,9 +129,6 @@ namespace FingerprintAgent.Api
                 if (_cors.HandleCorsPreflight(context.Request, context.Response))
                     return;
 
-                // Apply CORS headers for actual requests
-                _cors.ApplyCorsHeaders(context.Response, origin);
-
                 var path = context.Request.Url.AbsolutePath.TrimEnd('/');
                 var method = context.Request.HttpMethod;
 
@@ -150,6 +154,9 @@ namespace FingerprintAgent.Api
                     context.Response.OutputStream.Write(errorBytes, 0, errorBytes.Length);
                     context.Response.OutputStream.Close();
                 }
+
+                // Apply CORS headers only after handler succeeds
+                _cors.ApplyCorsHeaders(context.Response, origin);
             }
             catch (Exception)
             {
@@ -162,6 +169,10 @@ namespace FingerprintAgent.Api
             }
         }
 
+        /// <summary>
+        /// Disposes the server. Calls Stop() internally.
+        /// Safe to call multiple times (idempotent) - subsequent calls return immediately.
+        /// </summary>
         public void Dispose()
         {
             if (!_disposed)
