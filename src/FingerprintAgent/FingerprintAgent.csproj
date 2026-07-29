@@ -1,12 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
+    <LangVersion>8.0</LangVersion>
     <OutputType>Library</OutputType>
     <RootNamespace>FingerprintAgent</RootNamespace>
     <AssemblyName>FingerprintAgent.Library</AssemblyName>
     <PlatformTarget>x86</PlatformTarget>
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
+    <ZKTecoSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\ZKTeco\zkfp2.dll')">true</ZKTecoSdkPresent>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(ZKTecoSdkPresent)' == 'true'">
+    <DefineConstants>$(DefineConstants);ZKTECO_SDK_PRESENT</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
@@ -25,17 +31,11 @@
     <Reference Include="System.ComponentModel.DataAnnotations" />
   </ItemGroup>
 
-  <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
-    <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
-  </PropertyGroup>
-
-  <ItemGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
-    <Reference Include="SecuGen.FDxSDKPro.Windows">
-      <HintPath>$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
   <ItemGroup>
+    <!-- REVIEW FIX (02-02): Digital Persona U.are.U SDK via DPUruNet wrapper. The native DLLs
+         (DPFPDevNET.dll, DPFPCapture.dll, etc.) come from the vendor SDK download and must be
+         placed in lib/DigitalPersona/ — document in SCANNER_SETUP.md. Pin to 1.0.0.1 (offline cache). -->
+    <PackageReference Include="DPUruNet" Version="1.0.0.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
@@ -44,12 +44,6 @@
     <!-- REVIEW FIX (NuGet supply-chain): Pin to EXACT version 1.2.1 — do not use floating version. If NuGet feed defaults change, pinned version prevents unexpected updates. -->
     <PackageReference Include="ZkTecoFingerPrint" Version="1.2.1" />
     <!-- REVIEW FIX (fallback): If ZkTecoFingerPrint NuGet is abandoned or compromised, fall back to raw zkfp2 P/Invoke documented in 02-RESEARCH.md §5 Option A. Document this in SCANNER_SETUP.md "ZKTeco Fallback" section. -->
-  </ItemGroup>
-
-  <ItemGroup>
-    <Reference Include="System.ServiceProcess" />
-    <Reference Include="System.Drawing" />
-    <Reference Include="System.ComponentModel.DataAnnotations" />
   </ItemGroup>
 
   <ItemGroup>
