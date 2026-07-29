@@ -74,10 +74,11 @@ namespace FingerprintAgent.Api
 
                 CaptureResult result = scanner.Scan();
 
+                var imageBytes = result.ImageBytes ?? Array.Empty<byte>();
                 var response = new CaptureResponse
                 {
                     IsSuccess = true,
-                    ImageBytes = Convert.ToBase64String(result.ImageBytes),
+                    ImageBytes = Convert.ToBase64String(imageBytes),
                     MimeType = result.MimeType,
                     CapturedAt = DateTime.UtcNow.ToString("O"),
                     DeviceId = scanner.DeviceId,
