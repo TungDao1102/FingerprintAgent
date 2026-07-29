@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -17,36 +18,99 @@ namespace FingerprintAgent.Tests
     public class CorsMiddlewareTests
     {
         /// <summary>
-        /// Tests with wildcard CORS mode.
+        /// Wildcard CORS mode test fixture - shared across all WildcardMode tests.
         /// </summary>
-        public class WildcardMode : IDisposable
+        private class WildcardModeFixture : IDisposable
         {
-            private readonly HttpServer _server;
-            private readonly MockScannerAdapter _scanner;
-            private readonly HttpClient _client;
+            public HttpServer Server { get; }
+            public MockScannerAdapter Scanner { get; }
+            public HttpClient Client { get; }
             private bool _disposed;
 
-            public WildcardMode()
+            public WildcardModeFixture()
             {
-                _scanner = new MockScannerAdapter();
+                Scanner = new MockScannerAdapter();
                 var config = new Configuration.AgentConfig();
                 config.Cors.Mode = "wildcard";
                 config.Http.Port = 5045;
-                _server = new HttpServer(config, _scanner);
-                _server.Start();
+                Server = new HttpServer(config, Scanner);
+                Server.Start();
 
-                _client = new HttpClient();
-                _client.BaseAddress = new Uri("http://127.0.0.1:5045");
-                _client.Timeout = TimeSpan.FromSeconds(5);
+                Client = new HttpClient();
+                Client.BaseAddress = new Uri("http://127.0.0.1:5045");
+                Client.Timeout = TimeSpan.FromSeconds(5);
+            }
+
+            public void Dispose()
+            {
+                if (!_disposed)
+                {
+                    _disposed = true;
+                    Client?.Dispose();
+                    Server?.Stop();
+                    Server?.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Allowlist CORS mode test fixture - shared across all AllowlistMode tests.
+        /// </summary>
+        private class AllowlistModeFixture : IDisposable
+        {
+            public HttpServer Server { get; }
+            public MockScannerAdapter Scanner { get; }
+            public HttpClient Client { get; }
+            private bool _disposed;
+
+            public AllowlistModeFixture()
+            {
+                Scanner = new MockScannerAdapter();
+                var config = new Configuration.AgentConfig();
+                config.Cors.Mode = "allowlist";
+                config.Cors.AllowedOrigins = new[] { "http://trusted.com" };
+                config.Http.Port = 5046;
+                Server = new HttpServer(config, Scanner);
+                Server.Start();
+
+                Client = new HttpClient();
+                Client.BaseAddress = new Uri("http://127.0.0.1:5046");
+                Client.Timeout = TimeSpan.FromSeconds(5);
+            }
+
+            public void Dispose()
+            {
+                if (!_disposed)
+                {
+                    _disposed = true;
+                    Client?.Dispose();
+                    Server?.Stop();
+                    Server?.Dispose();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Tests with wildcard CORS mode.
+        /// Uses IClassFixture to ensure proper disposal of server/client resources.
+        /// </summary>
+        [Collection("WildcardMode")]
+        public class WildcardMode : IClassFixture<WildcardModeFixture>
+        {
+            private readonly WildcardModeFixture _fixture;
+
+            public WildcardMode(WildcardModeFixture fixture)
+            {
+                _fixture = fixture;
             }
 
             [Fact]
             public async Task Preflight_WithOrigin_Returns204()
             {
-                var request = new HttpRequestMessage(HttpMethod.Options, "/api/capture");
+                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
                 request.Headers.Add("Origin", "http://example.com");
 
-                var response = await _client.SendAsync(request);
+                var response = await _fixture.Client.SendAsync(request);
 
                 Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
                 Assert.Equal("*", response.Headers.GetValues("Access-Control-Allow-Origin").FirstOrDefault());
@@ -55,9 +119,9 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task Preflight_WithoutOrigin_ReturnsNotFound()
             {
-                var request = new HttpRequestMessage(HttpMethod.Options, "/api/capture");
+                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
 
-                var response = await _client.SendAsync(request);
+                var response = await _fixture.Client.SendAsync(request);
 
                 Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
             }
@@ -65,59 +129,37 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task ActualRequest_SetsAsterisk()
             {
-                var request = new HttpRequestMessage(HttpMethod.Get, "/health");
+                var request = new HttpRequestMessage(HttpMethod.GET, "/health");
                 request.Headers.Add("Origin", "http://example.com");
 
-                var response = await _client.SendAsync(request);
+                var response = await _fixture.Client.SendAsync(request);
 
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
                 Assert.Equal("*", response.Headers.GetValues("Access-Control-Allow-Origin").FirstOrDefault());
-            }
-
-            public void Dispose()
-            {
-                if (!_disposed)
-                {
-                    _disposed = true;
-                    _client?.Dispose();
-                    _server?.Stop();
-                    _server?.Dispose();
-                }
             }
         }
 
         /// <summary>
         /// Tests with allowlist CORS mode.
+        /// Uses IClassFixture to ensure proper disposal of server/client resources.
         /// </summary>
-        public class AllowlistMode : IDisposable
+        [Collection("AllowlistMode")]
+        public class AllowlistMode : IClassFixture<AllowlistModeFixture>
         {
-            private readonly HttpServer _server;
-            private readonly MockScannerAdapter _scanner;
-            private readonly HttpClient _client;
-            private bool _disposed;
+            private readonly AllowlistModeFixture _fixture;
 
-            public AllowlistMode()
+            public AllowlistMode(AllowlistModeFixture fixture)
             {
-                _scanner = new MockScannerAdapter();
-                var config = new Configuration.AgentConfig();
-                config.Cors.Mode = "allowlist";
-                config.Cors.AllowedOrigins = new[] { "http://trusted.com" };
-                config.Http.Port = 5046;
-                _server = new HttpServer(config, _scanner);
-                _server.Start();
-
-                _client = new HttpClient();
-                _client.BaseAddress = new Uri("http://127.0.0.1:5046");
-                _client.Timeout = TimeSpan.FromSeconds(5);
+                _fixture = fixture;
             }
 
             [Fact]
             public async Task Preflight_AllowedOrigin_Returns204()
             {
-                var request = new HttpRequestMessage(HttpMethod.Options, "/api/capture");
+                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
                 request.Headers.Add("Origin", "http://trusted.com");
 
-                var response = await _client.SendAsync(request);
+                var response = await _fixture.Client.SendAsync(request);
 
                 Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
                 Assert.Equal("http://trusted.com",
@@ -127,10 +169,10 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task Preflight_DeniedOrigin_Returns403()
             {
-                var request = new HttpRequestMessage(HttpMethod.Options, "/api/capture");
+                var request = new HttpRequestMessage(HttpMethod.OPTIONS, "/api/capture");
                 request.Headers.Add("Origin", "http://evil.com");
 
-                var response = await _client.SendAsync(request);
+                var response = await _fixture.Client.SendAsync(request);
 
                 Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
             }
@@ -138,25 +180,14 @@ namespace FingerprintAgent.Tests
             [Fact]
             public async Task ActualRequest_AllowedOrigin_SetsOriginHeader()
             {
-                var request = new HttpRequestMessage(HttpMethod.Get, "/health");
+                var request = new HttpRequestMessage(HttpMethod.GET, "/health");
                 request.Headers.Add("Origin", "http://trusted.com");
 
-                var response = await _client.SendAsync(request);
+                var response = await _fixture.Client.SendAsync(request);
 
                 Assert.Equal(HttpStatusCode.OK, response.StatusCode);
                 Assert.Equal("http://trusted.com",
                     response.Headers.GetValues("Access-Control-Allow-Origin").FirstOrDefault());
-            }
-
-            public void Dispose()
-            {
-                if (!_disposed)
-                {
-                    _disposed = true;
-                    _client?.Dispose();
-                    _server?.Stop();
-                    _server?.Dispose();
-                }
             }
         }
     }
