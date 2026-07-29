@@ -136,7 +136,8 @@ namespace FingerprintAgent.Configuration
                 var list = new System.Collections.Generic.List<string>();
                 foreach (var item in items)
                 {
-                    list.Add(item.Value);
+                    if (item.Value != null)
+                        list.Add(item.Value);
                 }
                 return list.ToArray();
             }
