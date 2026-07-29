@@ -140,6 +140,9 @@ namespace FingerprintAgent.Api
                 // Set default content type
                 context.Response.ContentType = "application/json";
 
+                // Apply CORS headers before writing response (headers must be set before OutputStream is flushed/closed)
+                _cors.ApplyCorsHeaders(context.Response, origin);
+
                 var correlationId = AgentLogger.GenerateCorrelationId();
 
                 if (path == "/health" && method == "GET")
@@ -159,9 +162,6 @@ namespace FingerprintAgent.Api
                     context.Response.OutputStream.Write(errorBytes, 0, errorBytes.Length);
                     context.Response.OutputStream.Close();
                 }
-
-                // Apply CORS headers only after handler succeeds
-                _cors.ApplyCorsHeaders(context.Response, origin);
             }
             catch (Exception)
             {

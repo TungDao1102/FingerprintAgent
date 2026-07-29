@@ -104,8 +104,9 @@ namespace FingerprintAgent.Tests
             string configPath = Path.Combine(_tempDir, "config.json");
             File.WriteAllText(configPath, "{invalid json missing quotes}");
 
-            // Act & Assert
-            Assert.Throws<FormatException>(() =>
+            // Act & Assert - Microsoft.Extensions.Configuration.Json wraps JSON parse errors
+            // in InvalidDataException (not FormatException) via JsonConfigurationProvider
+            Assert.Throws<InvalidDataException>(() =>
                 ConfigLoader.LoadFromDirectory(_tempDir));
         }
 
