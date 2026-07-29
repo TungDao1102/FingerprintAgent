@@ -15,7 +15,7 @@ namespace FingerprintAgent.Adapters
     /// TODO (Phase 2 post-integrate): verify against known test fingerprint image — if display is inverted,
     /// inversion is incorrect and must be removed.
     /// </summary>
-    public class FutronicAdapter : IScannerAdapter
+    public class FutronicAdapter : IScannerAdapter, IDisposable
     {
         private IntPtr _device;
         private int _imageWidth;
@@ -256,6 +256,16 @@ namespace FingerprintAgent.Adapters
         }
 
         #endregion
+
+        public void Dispose()
+        {
+            if (_device != IntPtr.Zero)
+            {
+                FutronicSDK.ftrScanCloseDevice(_device);
+                _device = IntPtr.Zero;
+            }
+            _isConnected = false;
+        }
     }
 }
 #else
@@ -263,7 +273,7 @@ namespace FingerprintAgent.Adapters
 // Allows compilation and unit testing without the vendor SDK DLL present.
 namespace FingerprintAgent.Adapters
 {
-    public class FutronicAdapter : IScannerAdapter
+    public class FutronicAdapter : IScannerAdapter, IDisposable
     {
         public bool IsConnected => false;
         public string DeviceId => "stub-device";
@@ -279,6 +289,10 @@ namespace FingerprintAgent.Adapters
         public CaptureResult Scan()
         {
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic: Stub adapter — SDK not present");
+        }
+
+        public void Dispose()
+        {
         }
     }
 }
