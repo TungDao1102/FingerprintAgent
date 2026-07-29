@@ -99,6 +99,16 @@ namespace FingerprintAgent.Service
                 _logger?.Error(stopCid, $"Error disposing HTTP server: {ex.Message}");
             }
 
+            try
+            {
+                (_scanner as IDisposable)?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                shutdownError = ex;
+                _logger?.Error(stopCid, $"Error disposing scanner: {ex.Message}");
+            }
+
             if (shutdownError != null)
             {
                 TryWriteEventLog($"Service stopped with error: {shutdownError.Message}", EventLogEntryType.Error);

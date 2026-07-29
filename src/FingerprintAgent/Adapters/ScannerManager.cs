@@ -18,8 +18,9 @@ namespace FingerprintAgent.Adapters
     /// Unknown vendor names in config.Scanner.Priority throw InvalidOperationException
     /// on construction — fail-fast on config typos, not silent reduction (T-02-09).
     /// </summary>
-    public class ScannerManager : IScannerAdapter
+    public class ScannerManager : IScannerAdapter, IDisposable
     {
+        private bool _disposed;
         private readonly IScannerAdapter[] _adapters;
         private readonly AgentLogger _logger;
         private readonly ScannerConfig _config;
@@ -193,10 +194,21 @@ namespace FingerprintAgent.Adapters
                         }
                     }
                 }
+
+                if (_adapters.Length == 0)
+                    return CaptureResult.Fail("CONFIG_ERROR", "No scanner adapters configured and MockMode is disabled");
             }
 
             _logger?.Error(null, "ScannerManager: all adapters failed");
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "No scanner connected — all adapters failed to initialize or capture");
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _cts?.Dispose();
+            (_activeAdapter as IDisposable)?.Dispose();
         }
     }
 }
