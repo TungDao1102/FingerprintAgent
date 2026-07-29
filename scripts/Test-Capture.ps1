@@ -19,11 +19,17 @@ function Invoke-SafeRestMethod {
         return $result
     }
     catch {
-        $statusCode = $_.Exception.Response.StatusCode.value__
-        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
-        $responseBody = $reader.ReadToEnd()
-        $reader.Close()
-        Write-Error "HTTP $statusCode : $responseBody"
+        # Invoke-RestMethod throws WebException; $_.Exception is the WebException itself
+        $webEx = $_.Exception
+        if ($webEx.Response) {
+            $statusCode = [int]$webEx.Response.StatusCode
+            $reader = New-Object System.IO.StreamReader($webEx.Response.GetResponseStream())
+            $responseBody = $reader.ReadToEnd()
+            $reader.Close()
+            Write-Error "HTTP $statusCode : $responseBody"
+        } else {
+            Write-Error $_.Exception.Message
+        }
     }
 }
 
