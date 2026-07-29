@@ -48,7 +48,8 @@
     "tdd_mode": true,
     "ui_review": true,
     "_auto_chain_active": false,
-    "use_worktrees": false
+    "use_worktrees": false,
+    "plan_review_convergence": true
   },
   "ship": {
     "pr_body_sections": []
