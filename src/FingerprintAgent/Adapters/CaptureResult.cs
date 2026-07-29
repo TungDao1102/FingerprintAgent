@@ -2,14 +2,14 @@ namespace FingerprintAgent.Adapters
 {
     public class CaptureResult
     {
-        public bool IsSuccess { get; set; }
-        public byte[] ImageBytes { get; set; }
-        public string MimeType { get; set; }
-        public string CapturedAt { get; set; }
-        public string DeviceId { get; set; }
-        public string VerificationData { get; set; }
-        public string ErrorMessage { get; set; }
-        public int Width { get; set; }
-        public int Height { get; set; }
+        public bool IsSuccess { get; init; }
+        public byte[] ImageBytes { get; init; }
+        public string MimeType { get; init; }
+        public string CapturedAt { get; init; }
+        public string DeviceId { get; init; }
+        public string VerificationData { get; init; }
+        public string ErrorMessage { get; init; }
+        public int Width { get; init; }
+        public int Height { get; init; }
     }
 }
