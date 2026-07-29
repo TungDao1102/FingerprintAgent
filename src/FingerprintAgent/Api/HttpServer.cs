@@ -101,7 +101,12 @@ namespace FingerprintAgent.Api
                 {
                     var context = await _listener.GetContextAsync();
 #pragma warning disable CS4014
-                    Task.Run(() => HandleRequest(context), ct);
+                    var handlerTask = Task.Run(() => HandleRequest(context), ct);
+                    handlerTask.ContinueWith(t => {
+                        if (t.IsFaulted) {
+                            _logger?.Error(AgentLogger.GenerateCorrelationId(), $"Unhandled request error: {t.Exception}");
+                        }
+                    }, TaskContinuationOptions.OnlyOnFaulted);
 #pragma warning restore CS4014
                 }
                 catch (ObjectDisposedException)
