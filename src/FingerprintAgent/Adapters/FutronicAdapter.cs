@@ -38,6 +38,11 @@ namespace FingerprintAgent.Adapters
         public bool Initialize()
         {
             _vendorErrorCode = "NONE";
+            if (_device != IntPtr.Zero)
+            {
+                FutronicSDK.ftrScanCloseDevice(_device);
+                _device = IntPtr.Zero;
+            }
             _device = FutronicSDK.ftrScanOpenDevice();
             if (_device == IntPtr.Zero)
             {
