@@ -56,23 +56,69 @@ namespace FingerprintAgent.Service
 
         protected override void OnStop()
         {
+            var stopCid = AgentLogger.GenerateCorrelationId();
+            Exception shutdownError = null;
+
             try
             {
-                var stopCid = AgentLogger.GenerateCorrelationId();
                 _logger?.Info(stopCid, "Service stopping");
-                _cts?.Cancel();
-                _httpServer?.Stop();
-                _httpServer?.Dispose();
-                _logger?.Info(stopCid, "Service stopped");
-                TryWriteEventLog("Service stopped", EventLogEntryType.Information);
             }
             catch (Exception ex)
             {
-                TryWriteEventLog($"Error during stop: {ex.Message}", EventLogEntryType.Error);
+                shutdownError = ex;
+                TryWriteEventLog($"Error logging service stop begin: {ex.Message}", EventLogEntryType.Warning);
+            }
+
+            try
+            {
+                _cts?.Cancel();
+            }
+            catch (Exception ex)
+            {
+                shutdownError = ex;
+                _logger?.Error(stopCid, $"Error cancelling token: {ex.Message}");
+            }
+
+            try
+            {
+                _httpServer?.Stop();
+            }
+            catch (Exception ex)
+            {
+                shutdownError = ex;
+                _logger?.Error(stopCid, $"Error stopping HTTP server: {ex.Message}");
+            }
+
+            try
+            {
+                _httpServer?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                shutdownError = ex;
+                _logger?.Error(stopCid, $"Error disposing HTTP server: {ex.Message}");
+            }
+
+            if (shutdownError != null)
+            {
+                TryWriteEventLog($"Service stopped with error: {shutdownError.Message}", EventLogEntryType.Error);
+            }
+            else
+            {
+                _logger?.Info(stopCid, "Service stopped");
+                TryWriteEventLog("Service stopped", EventLogEntryType.Information);
+            }
+
+            try
+            {
+                _logger?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[FingerprintAgent] Error disposing logger: {ex.Message}");
             }
             finally
             {
-                _logger?.Dispose();
                 _logger = null;
             }
         }
