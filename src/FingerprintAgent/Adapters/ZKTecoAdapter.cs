@@ -211,10 +211,11 @@ namespace FingerprintAgent.Adapters
                 _device = null;
             }
             _isConnected = false;
-            // ZkTecoFingerHost.Close() is a static teardown — call at service shutdown.
-            // The native library is reference-counted so it is safe to call multiple times.
-            try { ZkTecoFingerHost.Close(); }
-            catch (Exception ex) { disposalEx ??= ex; }
+            // NOTE: ZkTecoFingerHost.Close() is deliberately NOT called here — it is a static
+            // teardown that terminates the native context for ALL instances. Calling it from
+            // an individual adapter's Dispose() would break the multi-instance pattern when
+            // ScannerManager iterates through adapters. The host should be closed at service/
+            // application shutdown only (see ScannerManager.Dispose() or Program.cs cleanup).
 
             if (disposalEx != null)
                 System.Diagnostics.Debug.WriteLine($"[ZKTecoAdapter] Disposal error: {disposalEx.Message}");
