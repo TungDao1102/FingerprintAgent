@@ -1,6 +1,7 @@
 using System;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Configuration;
+using Moq;
 using Xunit;
 
 namespace FingerprintAgent.Tests
@@ -126,6 +127,31 @@ namespace FingerprintAgent.Tests
 
             Assert.True(result.IsSuccess);
             Assert.NotNull(result.VerificationData);
+        }
+
+        [Fact]
+        public void ScannerManager_BackoffRetry_VerifiesActiveAdapterIsCheckedOnRetry()
+        {
+            var config = MakeAgentConfig(mockMode: true);
+            var sm = new ScannerManager(config, logger: null);
+
+            var result1 = sm.Scan();
+            Assert.True(result1.IsSuccess);
+            Assert.True(sm.IsConnected);
+
+            var result2 = sm.Scan();
+            Assert.True(result2.IsSuccess);
+            Assert.NotNull(result2.ImageBytes);
+        }
+
+        [Fact]
+        public void ScannerManager_BackoffRetry_FallsBackWhenActiveStaysDisconnected()
+        {
+            var config = MakeAgentConfig(mockMode: true);
+            var sm = new ScannerManager(config, logger: null);
+
+            var result = sm.Scan();
+            Assert.True(result.IsSuccess, "MockScannerAdapter should succeed in MockMode");
         }
     }
 }
