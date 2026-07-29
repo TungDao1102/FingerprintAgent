@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 
 namespace FingerprintAgent.Adapters
@@ -47,8 +48,10 @@ namespace FingerprintAgent.Adapters
 
         private static byte[] GenerateMockPng(int width, int height)
         {
-            using (var bitmap = new Bitmap(width, height))
-            using (var graphics = Graphics.FromImage(bitmap))
+            // Graphics doesn't support indexed pixel formats, so draw on a 32-bit ARGB temp
+            byte[] grayPixels;
+            using (var temp = new Bitmap(width, height))
+            using (var graphics = Graphics.FromImage(temp))
             {
                 graphics.Clear(Color.LightGray);
 
@@ -68,9 +71,40 @@ namespace FingerprintAgent.Adapters
                     graphics.DrawString("MOCK SCANNER", labelFont, labelBrush, 10, 10);
                 }
 
+                grayPixels = new byte[width * height];
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        Color c = temp.GetPixel(x, y);
+                        byte gray = (byte)((c.R * 0.299) + (c.G * 0.587) + (c.B * 0.114));
+                        grayPixels[y * width + x] = gray;
+                    }
+                }
+            }
+
+            using (var grayscale = new Bitmap(width, height, PixelFormat.Format8bppIndexed))
+            {
+                var palette = grayscale.Palette;
+                for (int i = 0; i < 256; i++)
+                    palette.Entries[i] = Color.FromArgb(i, i, i);
+                grayscale.Palette = palette;
+
+                var data = grayscale.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    ImageLockMode.WriteOnly,
+                    PixelFormat.Format8bppIndexed);
+
+                int stride = data.Stride;
+                for (int y = 0; y < height; y++)
+                {
+                    Marshal.Copy(grayPixels, y * width, data.Scan0 + y * stride, width);
+                }
+                grayscale.UnlockBits(data);
+
                 using (var ms = new MemoryStream())
                 {
-                    bitmap.Save(ms, ImageFormat.Png);
+                    grayscale.Save(ms, ImageFormat.Png);
                     return ms.ToArray();
                 }
             }
