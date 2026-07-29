@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 
 namespace FingerprintAgent.Configuration
@@ -47,9 +48,16 @@ namespace FingerprintAgent.Configuration
             {
                 throw; // Rethrow FileNotFoundException from missing file
             }
+            catch (JsonReaderException ex)
+            {
+                throw new FormatException(
+                    $"config.json at {configPath} contains invalid JSON. " +
+                    $"Please verify the file is valid JSON.",
+                    ex);
+            }
             catch (Exception ex) when (
-                ex.Message.IndexOf("JSON", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                ex.Message.IndexOf("parse", StringComparison.OrdinalIgnoreCase) >= 0)
+                ex.InnerException is JsonReaderException ||
+                ex.GetType().Name.Contains("Json", StringComparison.OrdinalIgnoreCase))
             {
                 throw new FormatException(
                     $"config.json at {configPath} contains invalid JSON. " +
