@@ -1,3 +1,5 @@
+using System;
+
 namespace FingerprintAgent.Adapters
 {
     public class CaptureResult
@@ -11,5 +13,21 @@ namespace FingerprintAgent.Adapters
         public string ErrorMessage { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
+
+        public static CaptureResult Fail(string errorCode, string message)
+        {
+            return new CaptureResult
+            {
+                IsSuccess = false,
+                ImageBytes = null,
+                MimeType = null,
+                CapturedAt = DateTime.UtcNow.ToString("O"),
+                DeviceId = null,
+                VerificationData = null,
+                ErrorMessage = message,
+                Width = 0,
+                Height = 0
+            };
+        }
     }
 }
