@@ -11,6 +11,7 @@
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
     <ZKTecoSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\ZKTeco\zkfp2.dll')">true</ZKTecoSdkPresent>
     <DigitalPersonaSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\DigitalPersona\DPFPDevNET.dll')">true</DigitalPersonaSdkPresent>
+    <FutronicSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\Futronic\ftrScanAPI.dll')">true</FutronicSdkPresent>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(ZKTecoSdkPresent)' == 'true'">
@@ -23,6 +24,10 @@
 
   <PropertyGroup Condition="'$(DigitalPersonaSdkPresent)' == 'true'">
     <DefineConstants>$(DefineConstants);DIGITALPERSONA_SDK_PRESENT</DefineConstants>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(FutronicSdkPresent)' == 'true'">
+    <DefineConstants>$(DefineConstants);FUTRONIC_SDK_PRESENT</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
