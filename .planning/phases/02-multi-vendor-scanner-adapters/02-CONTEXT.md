@@ -6,7 +6,7 @@
 <domain>
 ## Phase Boundary
 
-Replace `MockScannerAdapter` with real vendor SDK adapters for SecuGen, Digital Persona, and Futronic. `ScannerManager` selects an adapter per capture request using lazy connect + priority-based fallback. Deliver `SecuGenAdapter`, `DigitalPersonaAdapter`, `FutronicAdapter`, and `ScannerManager`.
+Replace `MockScannerAdapter` with real vendor SDK adapters for SecuGen, Digital Persona, Futronic, and ZKTeco. `ScannerManager` selects an adapter per capture request using lazy connect + priority-based fallback. Deliver `SecuGenAdapter`, `DigitalPersonaAdapter`, `FutronicAdapter`, `ZKTecoAdapter`, and `ScannerManager`.
 
 </domain>
 
@@ -23,7 +23,7 @@ Replace `MockScannerAdapter` with real vendor SDK adapters for SecuGen, Digital 
 - **D-03:** First found — each adapter enumerates available devices via SDK and uses the first device found. Simplest; works for typical single-scanner deployments.
 
 ### Fallback Strategy
-- **D-04:** Priority-based fallback per capture — each `/api/capture` tries adapters in order (SecuGen → Digital Persona → Futronic) until one succeeds. If all fail, return `SCANNER_NOT_CONNECTED`. No sticky "last working" state — always fresh evaluation.
+- **D-04:** Priority-based fallback per capture — each `/api/capture` tries adapters in order (SecuGen → Digital Persona → Futronic → ZKTeco) until one succeeds. If all fail, return `SCANNER_NOT_CONNECTED`. No sticky "last working" state — always fresh evaluation.
 
 ### Futronic x86 Constraint
 - **D-05:** Agent runs as x86 (32-bit) — `<PlatformTarget>x86</PlatformTarget>` in csproj. All vendor SDKs are 32-bit; single-process simplicity.
@@ -37,6 +37,11 @@ Replace `MockScannerAdapter` with real vendor SDK adapters for SecuGen, Digital 
 ### SDK DLL Distribution
 - **D-08:** Copy to install directory alongside exe — vendor SDK DLLs live in `C:\Program Files\FingerprintAgent\` next to the agent exe. Relative path resolution via `AppDomain.CurrentDomain.BaseDirectory`.
 
+### ZKTeco Adapter
+- **D-09:** Use `ZkTecoFingerPrint` NuGet (MIT, v1.2.1) — simpler API than raw `zkfp2` class. Falls back to raw `libzkfpcsharp.dll` P/Invoke if NuGet is abandoned.
+- **D-10:** ZKTeco raw image is conventional grayscale (0=white, 255=dark) — NO pixel inversion needed (unlike Futronic).
+- **D-11:** ZKTeco capture (`AcquireFingerprint`/`AcquireFingerprintImage`) has no built-in timeout — must wrap with `Thread.Join(timeout)` or `CancellationToken` deadline enforcement at ScannerManager level.
+
 </decisions>
 
 <canonical_refs>
@@ -45,7 +50,7 @@ Replace `MockScannerAdapter` with real vendor SDK adapters for SecuGen, Digital 
 **Downstream agents MUST read these before planning or implementing.**
 
 - `.planning/ROADMAP.md` §Phase 2 — goal, success criteria, deliverables
-- `.planning/REQUIREMENTS.md` §SCAN-01 through SCAN-07 — specific requirements for scanner adapters
+- `.planning/REQUIREMENTS.md` §SCAN-01 through SCAN-09 — specific requirements for scanner adapters (including ZKTeco from Phase 5+)
 - `.planning/PROJECT.md` — core value, constraints, business context
 - `src/FingerprintAgent/Adapters/IScannerAdapter.cs` — existing interface (to be extended)
 - `src/FingerprintAgent/Adapters/CaptureResult.cs` — existing DTO (unchanged)
@@ -78,7 +83,7 @@ No external specs — requirements fully captured in decisions above.
 - `HttpServer` constructor: accepts `IScannerAdapter` — ScannerManager implements `IScannerAdapter` (composite pattern) OR ScannerManager is passed alongside so it can swap active adapter
 - `CaptureHandler`: calls `scanner.Scan()` — already correct for any `IScannerAdapter`
 - `HealthHandler`: uses `scanner.DeviceId`, `scanner.Model` — ScannerManager should expose the active adapter's properties
-- `ScannerConfig.Priority`: already exists in `AgentConfig.cs` — `["SecuGen", "DigitalPersona", "Futronic"]`
+- `ScannerConfig.Priority`: already exists in `AgentConfig.cs` — `["SecuGen", "DigitalPersona", "Futronic", "ZKTeco"]`
 - `ScannerConfig.MockMode`: already exists — Phase 2 adapters should only activate when `MockMode = false`
 
 </code_context>
@@ -88,7 +93,7 @@ No external specs — requirements fully captured in decisions above.
 
 - Vendor error codes: each adapter translates SDK-specific error codes into human-readable strings via `VendorErrorCode` property — used for logging and future debugging
 - Futronic uses P/Invoke x86 declarations — native SDK lives in the install folder, called via `[DllImport]` with `CallingConvention = CallingConvention.Cdecl`
-- Setup documentation: `SCANNER_SETUP.md` for each vendor (per ROADMAP deliverables) — SecuGen free SDK, Digital Persona U.are.U SDK, Futronic Standard SDK
+- Setup documentation: `SCANNER_SETUP.md` for each vendor (per ROADMAP deliverables) — SecuGen free SDK, Digital Persona U.are.U SDK, Futronic Standard SDK, ZKTeco (ZkTecoFingerPrint NuGet + native DLLs)
 
 </specifics>
 

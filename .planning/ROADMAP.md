@@ -48,7 +48,7 @@
 
 ## Phase 2: Multi-vendor Scanner Adapters
 
-**Goal:** Agent kết nối và quét được ít nhất 3 hãng máy quét vân tay: SecuGen, Digital Persona, Futronic.
+**Goal:** Agent kết nối và quét được ít nhất 4 hãng máy quét vân tay: SecuGen, Digital Persona, Futronic, ZKTeco.
 
 **Mode:** mvp
 
@@ -56,18 +56,20 @@
 1. SecuGen FDx SDK Pro adapter khởi tạo, quét và trả về PNG bytes.
 2. Digital Persona U.are.U SDK adapter khởi tạo, quét và trả về PNG bytes.
 3. Futronic Standard SDK adapter (P/Invoke x86) khởi tạo, quét và trả về PNG bytes.
-4. `ScannerManager` chọn adapter theo cấu hình ưu tiên và fallback khi một adapter thất bại.
-5. Mỗi adapter xử lý đúng lỗi SDK và chuyển thành error response chuẩn.
+4. ZKTeco adapter (ZkTecoFingerPrint NuGet) khởi tạo, quét và trả về PNG bytes.
+5. `ScannerManager` chọn adapter theo cấu hình ưu tiên và fallback khi một adapter thất bại.
+6. Mỗi adapter xử lý đúng lỗi SDK và chuyển thành error response chuẩn.
 
 **Requirements Covered:**
-- SCAN-01, SCAN-02, SCAN-03, SCAN-04, SCAN-05, SCAN-07
+- SCAN-01, SCAN-02, SCAN-03, SCAN-04, SCAN-05, SCAN-07, SCAN-08, SCAN-09, SCAN-10
 
 **Deliverables:**
-- `IScannerAdapter` interface trong Core
+- `IScannerAdapter` interface trong Core (extended with Initialize + VendorErrorCode)
 - `SecuGenAdapter` triển khai
 - `DigitalPersonaAdapter` triển khai
 - `FutronicAdapter` triển khai
-- `AdapterFactory` + `ScannerManager`
+- `ZKTecoAdapter` triển khai (ZkTecoFingerPrint NuGet)
+- `ScannerManager` (composite IScannerAdapter, priority fallback)
 - Native P/Invoke declarations cho Futronic
 - Adapter-specific setup notes (SCANNER_SETUP.md)
 
@@ -75,6 +77,7 @@
 - [ ] 02-01-PLAN.md — IScannerAdapter extension + SecuGenAdapter (SCAN-01, SCAN-05)
 - [ ] 02-02-PLAN.md — DigitalPersonaAdapter + FutronicAdapter (SCAN-02, SCAN-03, SCAN-07)
 - [ ] 02-03-PLAN.md — ScannerManager + wiring (SCAN-04, SCAN-05)
+- [ ] 02-04-PLAN.md — ZKTecoAdapter (SCAN-08, SCAN-09, SCAN-10)
 
 ---
 
@@ -147,7 +150,7 @@
 ## Phase 5+ (Future / v1.1+)
 
 - **Polling/WebSocket mode** để backend SaaS có thể đẩy yêu cầu quét xuống agent qua NAT/firewall.
-- **Plugin adapter** cho hãng thứ 4+ (ZKTeco, v.v.).
+- **Multi-scanner mode** — nhiều máy quét cùng lúc, chọn theo deviceId.
 - **ANSI/ISO template conversion** khi SDK hỗ trợ.
 - **Code signing certificate** để giảm cảnh báo SmartScreen khi cài MSI.
 - **Advanced auto-update** (delta update, rollback, channel preview/stable).

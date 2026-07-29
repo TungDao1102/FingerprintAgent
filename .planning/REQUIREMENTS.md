@@ -14,6 +14,9 @@
 - [ ] **SCAN-05**: Adapter chung `IScannerAdapter` định nghĩa contract cho mọi hãng máy quét.
 - [ ] **SCAN-06**: Khi máy quét bị ngắt kết nối, adapter đánh dấu `IsConnected = false` và thử kết nối lại theo lịch backoff.
 - [ ] **SCAN-07**: Mỗi adapter trả về ảnh PNG byte[] từ SDK raw image; phân giải/hệ màu do SDK quyết định.
+- [ ] **SCAN-08**: Agent phát hiện và khởi tạo máy quét ZKTeco thông qua ZkTecoFingerPrint NuGet (hoặc raw `libzkfpcsharp.dll` P/Invoke fallback).
+- [ ] **SCAN-09**: ZKTeco adapter trả về ảnh grayscale (không cần pixel inversion — khác Futronic).
+- [ ] **SCAN-10**: ZKTeco adapter xử lý `GetDeviceCount() = 0` quirk sau init bằng cách retry hoặc delay 100ms.
 
 ### HTTP API (API)
 
@@ -66,9 +69,8 @@
 
 ### Scanner Adapter
 
-- **SCAN-08**: Hỗ trợ thêm hãng máy quét thứ 4 trở đi (ví dụ ZKTeco) thông qua plugin adapter.
-- **SCAN-09**: Hỗ trợ chế độ multi-scanner (nhiều máy quét cùng lúc, chọn theo deviceId).
-- **SCAN-10**: Chuyển đổi ảnh sang định dạng chuẩn ANSI 378 / ISO 19794-2 nếu SDK hỗ trợ.
+- **SCAN-11**: Hỗ trợ chế độ multi-scanner (nhiều máy quét cùng lúc, chọn theo deviceId).
+- **SCAN-12**: Chuyển đổi ảnh sang định dạng chuẩn ANSI 378 / ISO 19794-2 nếu SDK hỗ trợ.
 
 ### HTTP API
 
@@ -109,6 +111,9 @@
 | SCAN-05 | Phase 1 | Pending |
 | SCAN-06 | Phase 3 | Pending |
 | SCAN-07 | Phase 2 | Pending |
+| SCAN-08 | Phase 2 | Pending |
+| SCAN-09 | Phase 2 | Pending |
+| SCAN-10 | Phase 2 | Pending |
 | API-01 | Phase 1 | Pending |
 | API-02 | Phase 1 | Pending |
 | API-03 | Phase 1 | Pending |
