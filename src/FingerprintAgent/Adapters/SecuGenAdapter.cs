@@ -68,6 +68,11 @@ namespace FingerprintAgent.Adapters
 
         public override bool InitializeDevice()
         {
+            if (_fpm != null)
+            {
+                (_fpm as IDisposable)?.Dispose();
+                _fpm = null;
+            }
             _fpm = new SGFingerPrintManager();
             Int32 err = _fpm.Init(SGFPMDeviceName.DEV_AUTO);
             if (err != 0)
