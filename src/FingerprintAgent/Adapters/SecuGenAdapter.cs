@@ -28,7 +28,7 @@ internal class SGFingerPrintManager
 
 namespace FingerprintAgent.Adapters
 {
-    public class SecuGenAdapter : BaseScannerAdapter
+    public class SecuGenAdapter : BaseScannerAdapter, IDisposable
     {
         private SGFingerPrintManager _fpm;
         private int _width;
@@ -141,6 +141,15 @@ namespace FingerprintAgent.Adapters
         private string MapError(Int32 code)
         {
             return _errorStrings.TryGetValue(code, out var str) ? str : $"ERROR_UNKNOWN_{code}";
+        }
+
+        public void Dispose()
+        {
+            if (_fpm != null)
+            {
+                (_fpm as IDisposable)?.Dispose();
+                _fpm = null;
+            }
         }
     }
 }
