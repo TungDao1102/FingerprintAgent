@@ -27,24 +27,31 @@ namespace FingerprintAgent.Adapters
         private readonly CancellationTokenSource _cts;
         private readonly bool _mockMode;
         private IScannerAdapter _activeAdapter;
+        private readonly object _adapterLock = new object();
+
+        private IScannerAdapter ActiveAdapter
+        {
+            get { lock (_adapterLock) return _activeAdapter; }
+            set { lock (_adapterLock) _activeAdapter = value; }
+        }
 
         public bool IsConnected => _mockMode
-            ? _activeAdapter?.IsConnected ?? false
-            : (_activeAdapter?.IsConnected ?? false);
+            ? ActiveAdapter?.IsConnected ?? false
+            : (ActiveAdapter?.IsConnected ?? false);
 
         public string DeviceId => _mockMode
-            ? (_activeAdapter?.DeviceId ?? "mock-device")
-            : (_activeAdapter?.DeviceId ?? "no-device");
+            ? (ActiveAdapter?.DeviceId ?? "mock-device")
+            : (ActiveAdapter?.DeviceId ?? "no-device");
 
         public string Model => _mockMode
-            ? (_activeAdapter?.Model ?? "Mock Scanner")
-            : (_activeAdapter?.Model ?? "no-device");
+            ? (ActiveAdapter?.Model ?? "Mock Scanner")
+            : (ActiveAdapter?.Model ?? "no-device");
 
         public string MimeType => "image/png";
 
         public string VendorErrorCode => _mockMode
             ? "MOCK"
-            : (_activeAdapter?.VendorErrorCode ?? "NO_ADAPTER");
+            : (ActiveAdapter?.VendorErrorCode ?? "NO_ADAPTER");
 
         /// <summary>
         /// ScannerManager itself does not maintain persistent connection state.
@@ -69,7 +76,7 @@ namespace FingerprintAgent.Adapters
             if (_config.MockMode)
             {
                 _mockMode = true;
-                _activeAdapter = new MockScannerAdapter();
+                ActiveAdapter = new MockScannerAdapter();
                 _logger?.Info(null, "ScannerManager: MockMode=true, using MockScannerAdapter");
                 return;
             }
@@ -120,19 +127,20 @@ namespace FingerprintAgent.Adapters
             // MockMode: delegate directly to mock
             if (_mockMode)
             {
-                var result = _activeAdapter.Scan();
+                var result = ActiveAdapter.Scan();
                 return result;
             }
 
             // SCAN-06 backoff: retry active adapter once if it was previously connected
             // but is now disconnected (temporary disconnection / device busy)
-            if (_activeAdapter != null && !_activeAdapter.IsConnected)
+            var current = ActiveAdapter;
+            if (current != null && !current.IsConnected)
             {
                 _logger?.Warn(null, "ScannerManager: active adapter disconnected, retrying once");
-                if (_activeAdapter.Initialize())
+                if (current.Initialize())
                 {
                     _logger?.Info(null, "ScannerManager: active adapter reconnected, proceeding");
-                    var retryResult = _activeAdapter.Scan();
+                    var retryResult = current.Scan();
                     if (retryResult.IsSuccess)
                     {
                         return retryResult;
@@ -142,7 +150,7 @@ namespace FingerprintAgent.Adapters
                 }
                 else
                 {
-                    _logger?.Warn(null, $"ScannerManager: active adapter retry initialize failed: {_activeAdapter.VendorErrorCode}");
+                    _logger?.Warn(null, $"ScannerManager: active adapter retry initialize failed: {current.VendorErrorCode}");
                     // fall through to normal priority fallback
                 }
             }
@@ -174,7 +182,7 @@ namespace FingerprintAgent.Adapters
                                 var result = adapter.Scan();
                                 if (result.IsSuccess)
                                 {
-                                    _activeAdapter = adapter;
+                                    ActiveAdapter = adapter;
                                     _logger?.Info(null, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
                                     return result;
                                 }
@@ -208,7 +216,7 @@ namespace FingerprintAgent.Adapters
             if (_disposed) return;
             _disposed = true;
             _cts?.Dispose();
-            (_activeAdapter as IDisposable)?.Dispose();
+            (ActiveAdapter as IDisposable)?.Dispose();
         }
     }
 }
