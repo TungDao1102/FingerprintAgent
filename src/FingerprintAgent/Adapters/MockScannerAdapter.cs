@@ -13,6 +13,10 @@ namespace FingerprintAgent.Adapters
         public string Model => "Mock Scanner v1.0";
         public string MimeType => "image/png";
 
+        public bool Initialize() => true;
+
+        public string VendorErrorCode { get { return "MOCK"; } }
+
         public CaptureResult Scan()
         {
             const int width = 320;
