@@ -8,7 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\FingerprintAgent\FingerprintAgent.csproj" />
+    <ProjectReference Include="..\FingerprintAgent\FingerprintAgent.csproj">
+      <Name>FingerprintAgent.Library</Name>
+    </ProjectReference>
   </ItemGroup>
 
   <ItemGroup>
