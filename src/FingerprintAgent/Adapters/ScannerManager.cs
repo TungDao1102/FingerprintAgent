@@ -228,6 +228,11 @@ namespace FingerprintAgent.Adapters
             if (_disposed) return;
             _disposed = true;
             _cts?.Dispose();
+            if (_adapters != null)
+            {
+                foreach (var adapter in _adapters)
+                    (adapter as IDisposable)?.Dispose();
+            }
             (ActiveAdapter as IDisposable)?.Dispose();
         }
     }
