@@ -46,7 +46,7 @@ namespace FingerprintAgent.Service
             _cts = new CancellationTokenSource();
             var startCid = AgentLogger.GenerateCorrelationId();
             _logger.Info(startCid, "Service starting");
-            _scanner = new MockScannerAdapter();
+            _scanner = new ScannerManager(_config, _logger);
             _httpServer = new HttpServer(_config, _scanner, _logger);
             _httpServer.Start();
 
