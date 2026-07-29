@@ -15,20 +15,22 @@ $ErrorActionPreference = "Stop"
 function Invoke-SafeRestMethod {
     param([string]$Uri, [string]$Method, [string]$Body)
     try {
-        $result = Invoke-RestMethod -Uri $Uri -Method $Method -Body $Body -ContentType "application/json" -ErrorAction Stop
+        $result = Invoke-RestMethod -Uri $Uri -Method $Method -Body $Body -ContentType "application/json" -NoProxy -ErrorAction Stop
         return $result
     }
     catch {
-        # Invoke-RestMethod throws WebException; $_.Exception is the WebException itself
-        $webEx = $_.Exception
-        if ($webEx.Response) {
-            $statusCode = [int]$webEx.Response.StatusCode
-            $reader = New-Object System.IO.StreamReader($webEx.Response.GetResponseStream())
-            $responseBody = $reader.ReadToEnd()
-            $reader.Close()
-            Write-Error "HTTP $statusCode : $responseBody"
+        # Extract status code from exception message (works on both PS5 and PS7):
+        # PS5: "...The remote server returned an unexpected response: (400) Bad Request"
+        # PS7: "...Response status code does not indicate success: 400 (Bad Request)"
+        $statusCode = $null
+        if ($_.Exception.Message -match '\((\d+)\)|status code (\d+)') {
+            $statusCode = if ($matches[1]) { $matches[1] } else { $matches[2] }
+        }
+        $msg = $_.Exception.Message
+        if ($statusCode) {
+            Write-Error "HTTP $statusCode : $msg"
         } else {
-            Write-Error $_.Exception.Message
+            Write-Error $msg
         }
     }
 }

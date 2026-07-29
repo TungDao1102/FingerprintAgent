@@ -98,7 +98,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void Load_InvalidJson_ThrowsFormatException()
+        public void Load_InvalidJson_ThrowsInvalidDataException()
         {
             // Arrange
             string configPath = Path.Combine(_tempDir, "config.json");
