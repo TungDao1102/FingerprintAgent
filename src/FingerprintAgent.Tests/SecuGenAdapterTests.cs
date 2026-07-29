@@ -3,6 +3,7 @@ using Xunit;
 
 namespace FingerprintAgent.Tests
 {
+#if SECUGEN_SDK_PRESENT
     public class SecuGenAdapterTests
     {
         [Fact]
@@ -55,4 +56,5 @@ namespace FingerprintAgent.Tests
             Assert.Equal("image/png", adapter.MimeType);
         }
     }
+#endif
 }
