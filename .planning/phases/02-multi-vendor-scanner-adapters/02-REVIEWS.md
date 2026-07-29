@@ -1,7 +1,7 @@
 ---
 phase: "02"
-reviewers: [self-review]
-reviewed_at: "2026-07-29T00:00:00Z"
+reviewers: [self-review, self-review-c2]
+reviewed_at: "2026-07-29T12:15:00Z"
 plans_reviewed:
   - ".planning/phases/02-multi-vendor-scanner-adapters/02-01-PLAN.md"
   - ".planning/phases/02-multi-vendor-scanner-adapters/02-02-PLAN.md"
@@ -11,195 +11,181 @@ notes: |
   No external AI CLIs available (codex not found, gemini not found, claude not found,
   opencode not found). Self-review performed by the executing OpenCode agent, grounded
   against actual source files at the commit being reviewed.
+
+  CYCLE 2 REVIEW: Plans have been updated to incorporate Cycle 1 findings (commit 48d08a8).
+  This cycle verifies which findings were actually addressed vs. still outstanding.
 ---
 
 # Cross-AI Plan Review — Phase 2
 
-## Self-Review (Executing Agent)
+## Cycle 2 Self-Review (Executing Agent)
 
 ### Source Ground Verification
 
-Checked against actual repo state at current HEAD (`20e0802`):
+Checked against actual repo state at current HEAD (`48d08a8`):
 
 | File | Exists? | Notes |
 |------|---------|-------|
-| `src/FingerprintAgent/Adapters/IScannerAdapter.cs` | ✅ | Does NOT have `Initialize()` or `VendorErrorCode` |
+| `src/FingerprintAgent/Adapters/IScannerAdapter.cs` | ✅ | Still does NOT have `Initialize()` or `VendorErrorCode` — interface NOT extended |
 | `src/FingerprintAgent/Adapters/BaseScannerAdapter.cs` | ❌ | Not created yet |
 | `src/FingerprintAgent/Adapters/SecuGenAdapter.cs` | ❌ | Not created yet |
 | `src/FingerprintAgent/Adapters/DigitalPersonaAdapter.cs` | ❌ | Not created yet |
 | `src/FingerprintAgent/Adapters/FutronicAdapter.cs` | ❌ | Not created yet |
 | `src/FingerprintAgent/Adapters/ZKTecoAdapter.cs` | ❌ | Not created yet |
 | `src/FingerprintAgent/Adapters/ScannerManager.cs` | ❌ | Not created yet |
-| `src/FingerprintAgent/Adapters/MockScannerAdapter.cs` | ✅ | Lacks `Initialize()` and `VendorErrorCode` stubs |
-| `src/FingerprintAgent/Service/FingerprintAgentService.cs` | ✅ | Line 49: `_scanner = new MockScannerAdapter()` — not updated |
+| `src/FingerprintAgent/Adapters/MockScannerAdapter.cs` | ✅ | Still lacks `Initialize()` and `VendorErrorCode` stubs |
+| `src/FingerprintAgent/Service/FingerprintAgentService.cs` | ✅ | Line 49: `_scanner = new MockScannerAdapter()` — still not updated |
 | `SCANNER_SETUP.md` | ❌ | Does not exist |
-| `src/FingerprintAgent.Tests/SecuGenAdapterTests.cs` | ❌ | Not created |
-| `src/FingerprintAgent.Tests/DigitalPersonaAdapterTests.cs` | ❌ | Not created |
-| `src/FingerprintAgent.Tests/FutronicAdapterTests.cs` | ❌ | Not created |
-| `src/FingerprintAgent.Tests/ZKTecoAdapterTests.cs` | ❌ | Not created |
-| `src/FingerprintAgent.Tests/ScannerManagerTests.cs` | ❌ | Not created |
 
-**Status of Phase 2 execution: NO PLANS HAVE BEEN EXECUTED. All plan files (02-01 through 02-04) exist in `.planning/` but zero artifacts have been produced.**
+**Status of Phase 2 execution: STILL NO PLANS EXECUTED.** Commit `48d08a8` incorporated review findings into plan text, but no implementation has been produced. The interface remains unextended. All adapter files are still missing. `FingerprintAgentService` still creates `new MockScannerAdapter()` directly.
 
 ---
 
-## Summary
+## Cycle 1 Findings — Resolution Status
 
-Phase 2 plans are architecturally thorough — they correctly identify lazy-connect per capture, priority-based fallback, the 10-second total timeout, and x86 platform constraint. The 4-wave decomposition (interface extension → two adapters per wave → ScannerManager → ZKTeco) is sound. However, the current repo state confirms that 02-01 has NOT been executed, which means all downstream plans (02-02, 02-03, 02-04) reference files that do not exist. The interface `IScannerAdapter` at `src/FingerprintAgent/Adapters/IScannerAdapter.cs:1-13` still lacks `Initialize()` and `VendorErrorCode` — this is a hard blocking issue for every adapter plan. Additionally, `MockScannerAdapter` has not been updated to satisfy the extended interface, `FingerprintAgentService` still creates `new MockScannerAdapter()` directly (line 49), and SCAN-06 (reconnection with backoff) is missing from all plans entirely.
+### HIGH Findings from Cycle 1
+
+| # | Finding | Status in Cycle 2 |
+|---|---------|-------------------|
+| H-1 | IScannerAdapter interface not extended | **Unresolved** — plans updated (02-01-PLAN.md Task 1) but 02-01 not executed. IScannerAdapter still only has `IsConnected`, `DeviceId`, `Model`, `Scan()`, `MimeType`. |
+| H-2 | MockScannerAdapter needs D-02 stubs | **Unresolved** — 02-01-PLAN.md Task 1 says "REVIEW FIX (atomic interface + mock): update MockScannerAdapter atomically" but 02-01 not executed. MockScannerAdapter still lacks `Initialize()` and `VendorErrorCode`. |
+| H-3 | ScannerManager re-initializes all adapters on every call | **Partially Resolved** — 02-03-PLAN.md Task 1 line 91 includes "D-01 Design Clarification: per-call Initialize() is intentional — D-01 specifies no persistent connection state. If adapter device is already open, SDK must handle idempotently." The concern is acknowledged with explicit rationale, but not yet verified by implementation. |
+| H-4 | All Phase 2 plans are unexecuted | **Acknowledged** — Plans exist, review findings incorporated, but zero artifacts produced. |
+
+### MEDIUM Findings from Cycle 1
+
+| # | Finding | Status in Cycle 2 |
+|---|---------|-------------------|
+| M-5 | SCAN-06 reconnection with backoff missing | **Resolved in plan** — 02-03-PLAN.md Task 1 behavior: "SCAN-06 (review finding): if active adapter's IsConnected=false on next call, retry same adapter once before falling back." Must still be verified by execution. |
+| M-6 | Unknown vendor name silently skipped | **Resolved in plan** — 02-03-PLAN.md Task 1 behavior: "Config validation (review finding): unknown vendor name throws exception — fail-fast on misconfiguration." Must still be verified by execution. |
+| M-7 | ZKTeco async/Sync deadlock risk | **Resolved in plan** — 02-04-PLAN.md Task 2 "REVIEW FIX (async/sync mismatch):" documents that adapter uses internal `.Wait()` internally on `AcquireFingerprintAsync`. Acknowledged but requires Windows Service context testing. |
+| M-8 | ZkTecoFingerPrint NuGet supply-chain | **Resolved in plan** — 02-04-PLAN.md threat model T-02-04-SC (low, accept). REVIEW FIX adds exact version pin and P/Invoke fallback documentation. |
+| M-9 | Futronic pixel inversion unverified | **Unresolved** — Not addressed in any plan. Still pending real SDK verification. |
+
+### LOW Findings from Cycle 1
+
+| # | Finding | Status in Cycle 2 |
+|---|---------|-------------------|
+| L-10 | Plan 02-03 task description wording | **Resolved** — Phrasing clarified in 02-03-PLAN.md |
+| L-11 | BaseScannerAdapter GDI+ object disposal | **Unresolved** — No task in any plan explicitly verifies `using` blocks in ToPngGrayscale implementations. |
+| L-12 | SecuGen/Digital Persona/Futronic NuGet supply-chain not assessed | **Unresolved** — No cross-plan supply-chain threat entry added. |
 
 ---
 
-## Strengths
-
-- **D-01 through D-11 are well-specified decisions** — the deferred-idea pattern gives clear boundaries per vendor (D-09/D-10/D-11 for ZKTeco), preventing scope creep
-- **Wave decomposition** is appropriate: 02-01 extends the interface and implements the reference adapter (SecuGen), 02-02 adds two more adapters, 02-03 wires everything together, 02-04 adds ZKTeco as a 4th vendor
-- **D-06 (10-second total budget) and D-11 (ZKTeco blocking capture)** are correctly identified as critical timeout concerns requiring `CancellationToken` propagation through `ScannerManager`
-- **Pixel inversion distinction** (Futronic needs `255-value`, ZKTeco does not) is explicitly called out — prevents a subtle bug
-- **Threat models per plan** identify `BadImageFormatException` from 32-bit DLL in 64-bit process as a critical risk
-- **ZkTecoFingerPrint NuGet (MIT, v1.2.1)** is a pragmatic choice avoiding raw COM interop complexity
-- **ScannerManager.MockMode** delegation is correctly designed — `FingerprintAgentService` needs no changes beyond swapping the `new MockScannerAdapter()` line
-
----
-
-## Concerns
+## New Findings — Cycle 2
 
 ### HIGH
 
-**1. IScannerAdapter interface not extended — all downstream plans blocked**
-- **Evidence:** `src/FingerprintAgent/Adapters/IScannerAdapter.cs:1-13` — only has `IsConnected`, `DeviceId`, `Model`, `Scan()`, `MimeType`. No `Initialize()` or `VendorErrorCode`.
-- **Mechanism:** Plan 02-01 Task 1 modifies this file but has not been executed. Plans 02-02, 02-03, 02-04 all depend on the interface extension to compile.
-- **Impact:** If 02-01 is executed without also updating `MockScannerAdapter`, the build breaks because `MockScannerAdapter` no longer satisfies `IScannerAdapter`.
-- **Disposition:** 02-01 must execute first. Its `done` criterion must include: (a) the interface extension, (b) `MockScannerAdapter` updated with `Initialize() = true` and `VendorErrorCode = "MOCK"` stubs, (c) verify `dotnet build` succeeds.
+**1. IScannerAdapter interface still not extended — plans are updated but unexecuted**
+- **Evidence:** `src/FingerprintAgent/Adapters/IScannerAdapter.cs:1-13` — same as Cycle 1: only `IsConnected`, `DeviceId`, `Model`, `Scan()`, `MimeType`. No `Initialize()` or `VendorErrorCode`.
+- **Mechanism:** 02-01-PLAN.md Task 1 correctly identifies the fix and 02-01 is next in execution order, but 02-01 has not been executed. All downstream plans (02-02, 02-03, 02-04) will fail to compile when executed because they depend on the extended interface.
+- **Cycle 1 disposition:** 02-01 must execute first; MockScannerAdapter must be updated atomically.
+- **Cycle 2 assessment:** Concern explicitly acknowledged in 02-01-PLAN.md but unaddressed in code. Remains HIGH.
 
-**2. MockScannerAdapter needs D-02 stubs before 02-01 execution can complete without breaking the build**
-- **Evidence:** `src/FingerprintAgent/Adapters/MockScannerAdapter.cs:9-74` — currently does not implement `Initialize()` or `VendorErrorCode`. After 02-01 Task 1 adds these to `IScannerAdapter`, `MockScannerAdapter` must implement them or the project will not compile.
-- **Mechanism:** Plan 02-03 Task 2 mentions updating `MockScannerAdapter` ("Update MockScannerAdapter to implement the extended IScannerAdapter (Initialize() and VendorErrorCode) with trivial stubs"), but 02-03 depends on 02-01 AND 02-02 — the MockScannerAdapter update must happen atomically with the interface extension, not later.
-- **Disposition:** Add `Initialize()` and `VendorErrorCode` stubs to `MockScannerAdapter` as part of 02-01 Task 1 (not deferred to 02-03), so the build passes immediately after 02-01 lands.
+**2. MockScannerAdapter still lacks `Initialize()` and `VendorErrorCode` — build will break when 02-01 lands**
+- **Evidence:** `src/FingerprintAgent/Adapters/MockScannerAdapter.cs:9-74` — same as Cycle 1. Does not implement the two new members. The project will not compile after 02-01's interface extension.
+- **Cycle 1 disposition:** Add stubs atomically in 02-01 Task 1.
+- **Cycle 2 assessment:** 02-01-PLAN.md Task 1 action text includes "REVIEW FIX (atomic interface + mock): update MockScannerAdapter in the same commit." But 02-01 is unexecuted. Remains HIGH.
 
-**3. ScannerManager.Scan() re-initializes every adapter on every call — no caching of successful adapter**
-- **Evidence:** Plan 02-03 Task 1, lines 75-82: `foreach (var adapter in _adapters) { if (adapter.Initialize()) { var result = adapter.Scan(); ... } }` — `_activeAdapter` is set on success but is not reused on the next `Scan()` call. This means if SecuGen succeeds once, on the next call the code still tries all adapters in priority order.
-- **Mechanism:** D-01 says "lazy connect per capture — each `/api/capture` triggers adapter selection." However, if the same adapter is still connected from the previous call, re-initializing it is wasteful. More critically: if SecuGen was the active adapter and is still connected, a fresh `Initialize()` call may reopen the device unnecessarily (or fail if the device is already open from the prior call).
-- **Disposition:** Either (a) add `_initializedAdapter` caching — skip `Initialize()` if the same adapter was already active and `IsConnected == true`, or (b) explicitly confirm that D-01 intends full re-initialization per call (in which case the SDK must support re-initializing an already-open device, which is unclear for all four SDKs).
+**3. ScannerManager re-initializes every adapter on every call — D-01 clarification in plan but implementation unwritten**
+- **Evidence:** 02-03-PLAN.md Task 1 line 91: "D-01 Design Clarification (per review finding): per-call Initialize() is intentional." The plan acknowledges the concern and documents why it's by design. However, no code exists yet — `ScannerManager.cs` is not created.
+- **Cycle 1 disposition:** Either add caching or confirm D-01 intent.
+- **Cycle 2 assessment:** Concern acknowledged and rationale provided. PARTIALLY RESOLVED — mitigation in progress (plan written), not yet verified (no code). Remains HIGH until ScannerManager is implemented and the D-01 idempotency claim is confirmed against real SDK behavior.
 
-**4. All Phase 2 plans are unexecuted — REVIEWS.md reviewed against empty implementation**
-- **Evidence:** No `02-01-SUMMARY.md`, `02-02-SUMMARY.md`, `02-03-SUMMARY.md`, `02-04-SUMMARY.md` exist. No adapter `.cs` files exist in `src/FingerprintAgent/Adapters/` beyond the three from Phase 1.
-- **Impact:** This review is of plan text only, not verified implementation. The plan quality is good, but real defects only surface when code is written.
-- **Disposition:** Acknowledge. Plans must be executed before a meaningful implementation review can occur.
+**4. All Phase 2 plans remain unexecuted — second consecutive cycle with zero implementation**
+- **Evidence:** No adapter files created, no interface extended, no ScannerManager. All implementation artifacts are still missing.
+- **Cycle 1 said:** "Plans must be executed before a meaningful implementation review can occur."
+- **Cycle 2 says the same.** This is now a process concern — Phase 2 planning is complete and reviewed, but execution has not started.
 
 ### MEDIUM
 
-**5. SCAN-06 (reconnection with backoff) is missing from all plans**
-- **Evidence:** `SCAN-06` in `.planning/REQUIREMENTS.md`: "Khi máy quét bị ngắt kết nối, adapter đánh dấu `IsConnected = false` và thử kết nối lại theo lịch backoff." This requirement appears in the ROADMAP Phase 2 deliverable checklist but is not addressed in any of 02-01 through 02-04.
-- **Impact:** After Phase 2, if a device is disconnected mid-session, the agent will fail all subsequent captures until the service restarts. No backoff retry logic exists.
-- **Disposition:** Add SCAN-06 handling — either as a new minimal plan (02-05) or as tasks within existing plans. At minimum, `ScannerManager.Scan()` should catch `IsConnected = false` from the active adapter and retry the same adapter once before falling back.
+**5. Futronic pixel inversion still unverified**
+- **Evidence:** 02-02-PLAN.md Task 2: "RAW pixels INVERTED: each pixel value transformed as 255 - rawValue before PNG encoding." No plan cites an actual Futronic SDK manual. The research (02-RESEARCH.md §3) cites "multiple sources" and a StackOverflow answer. No known test image is referenced.
+- **Impact:** If inversion is wrong, all Futronic images appear inverted in production. This cannot be fixed post-deployment without rescanning all enrolled fingers.
+- **Disposition:** Add a verify command to 02-02 that references a known test image. If none exists at execution time, add a SCANNER_SETUP.md entry and an integration test flag. Still unaddressed.
 
-**6. ScannerManager silently skips unrecognized vendor names in priority array**
-- **Evidence:** Plan 02-03 Task 1, line 78: "If vendor name not recognized, log WARNING and skip." This means `config.json` with a typo like `"SecuGen " ` (trailing space) would silently use only the remaining valid vendors.
-- **Mechanism:** T-02-09 threat model mentions this but the disposition is "mitigate" with the log-only approach.
-- **Disposition:** Treat unknown vendor names as a fatal config error rather than a warning — throw or return a clear error on startup so operators notice misconfiguration immediately.
+**6. ZKTeco async/sync mismatch acknowledged but unverified in Windows Service context**
+- **Evidence:** 02-04-PLAN.md Task 2 "REVIEW FIX (async/sync mismatch):" documents that internal `.Wait()` on `AcquireFingerprintAsync` is safe because the NuGet implementation wraps blocking calls with `Task.Run`. This is a plausible claim, but it has not been tested in an actual Windows Service hosting environment.
+- **Impact:** If the claim is wrong, the agent deadlocks in production under certain capture conditions.
+- **Disposition:** Add `ScannerManager_AsyncAdapter_NoDeadlock` test to `ScannerManagerTests.cs` or `SCANNER_SETUP.md` note. Plan acknowledges but does not add explicit verification. **Action needed:** Add test or explicit deferral to Phase 3.
 
-**7. ZKTecoAdapter uses async `AcquireFingerprintAsync` but ScannerManager.Scan() is synchronous**
-- **Evidence:** Plan 02-04 Task 2 behavior: "Call `await _device.AcquireFingerprintAsync(cts.Token)`" — but Plan 02-03 Task 1 ScannerManager `Scan()` has no `async` modifier and returns `CaptureResult` not `Task<CaptureResult>`.
-- **Mechanism:** If `AcquireFingerprintAsync` is genuinely async (returns before completion), calling `.Wait()` or `.Result` on it from a sync method could cause deadlocks in a service context. If it's a synchronous method that happens to return a `Task` (blocking until completion), it should be safe but the method naming is misleading.
-- **Disposition:** Verify that `ZkTecoFingerPrint.ZkDevice.AcquireFingerprintAsync` is a true async method and that `ScannerManager.Scan()` should be `async Task<CaptureResult>` instead. If the method blocks synchronously, add a comment clarifying this. Test in the Windows Service hosting environment (not console) to verify no deadlock.
+**7. ScannerManager.Dispose() missing from all plans**
+- **Cycle 1 suggestion:** Add `ScannerManager.Dispose()`. The composite holds `IScannerAdapter` instances that may own native resources. No plan incorporated this suggestion.
+- **Disposition:** Not in any PLAN.md. **Action needed:** Add to 02-03-PLAN.md task list or explicitly reject/defer.
 
-**8. ZkTecoFingerPrint NuGet has only 13 GitHub stars — supply-chain risk**
-- **Evidence:** Research §5: "GitHub: 13 stars, MIT license" — small project with no external security audit.
-- **Mechanism:** NuGet package `ZkTecoFingerPrint` v1.2.1 could be abandoned, compromised, or renamed. The package wraps native `libzkfpcsharp.dll` — any change to the wrapper could break Phase 2.
-- **Disposition:** Already noted as T-02-04-SC (low severity, accepted). Additionally, pin to an exact version (not `1.2.1` latest) and verify the package hash in the Phase 4 installer. Consider a raw `zkfp2` P/Invoke fallback if the NuGet is abandoned.
+**8. BaseScannerAdapter GDI+ disposal not explicitly verified**
+- **Cycle 1 concern L-11:** `ToPngGrayscale` creates `Bitmap` and `MemoryStream` per call. Under high-frequency capture, GDI+ allocation could cause `ExternalException`.
+- **Cycle 1 disposition:** Confirm `using` blocks are properly placed.
+- **Cycle 2:** No plan added explicit verification of `using` block discipline in adapter implementations. **Action needed:** Add to verify command or plan task.
 
-**9. Futronic pixel inversion assumes constant 255-offset per pixel — not validated against real SDK output**
-- **Evidence:** Research §3: "Futronic: raw 8-bit grayscale — values represent optical density (higher = darker). Most implementations invert the values when displaying." Plan 02-02 Task 2: "RAW pixels INVERTED: each pixel value transformed as 255 - rawValue before PNG encoding."
-- **Mechanism:** This is a display-oriented convention, not an SDK guarantee. If Futronic SDK documentation says raw values ARE dark-on-light (dark ridges = high values), then inversion is correct. But the plan does not cite an SDK manual — only "multiple sources."
-- **Disposition:** Confirm against Futronic SDK documentation or a known-good reference image. If wrong, all captured Futronic images will appear inverted. Add a verify command to compare against a known test image, or add a config flag to disable inversion if needed.
-
-### LOW
-
-**10. Plan 02-03 Task 2 says "update FingerprintAgentService.cs to use ScannerManager" but also says "no other code changes needed" — these statements conflict**
-- **Evidence:** Plan 02-03 Task 2 action: replace `MockScannerAdapter` with `ScannerManager`. But the task description says "FingerprintAgentService creates ScannerManager(_config, _logger) instead of MockScannerAdapter." The "no other code changes needed" applies to `CaptureHandler` and `HealthHandler`, not `FingerprintAgentService`. This is correct — only `FingerprintAgentService` changes.
-- **Mechanism:** Confusing phrasing but the actual code change is correct.
-- **Disposition:** Minor — clarify the task description. No code change needed beyond the one line.
-
-**11. BaseScannerAdapter.Scan() creates GDI+ objects per capture — potential memory pressure under high load**
-- **Evidence:** Plan 02-01 Task 2: "Non-virtual method `CaptureResult Scan()`: calls InitializeDevice(), then CaptureRawImage(), then converts raw bytes to PNG via ToPngGrayscale()." ToPngGrayscale creates a Bitmap per call.
-- **Mechanism:** Each `Scan()` call creates `Bitmap` and `MemoryStream` objects that must be disposed. Under high-frequency capture (multiple calls per second), GDI+ object allocation could cause `ExternalException` from GDI+ if not carefully managed.
-- **Disposition:** Confirm `using` blocks are properly placed in all adapter `Scan()` implementations. The plan does specify this pattern; verify the actual implementations follow through.
-
-**12. Plan 02-04 threat model T-02-04-SC says "low severity, accept" for ZkTecoFingerPrint NuGet package — but the threat model for Plan 02-01 has no equivalent entry for SecuGen/Digital Persona/Futronic NuGet packages**
-- **Evidence:** Plan 02-01 threat model only covers `sgfplib.dll` swap and `GetImageEx` blocking. Plan 02-02 covers DLL swaps. Plan 02-04 adds NuGet supply-chain. The SecuGen DLL and DPUruNet NuGet are not assessed for supply-chain compromise.
-- **Disposition:** Add a cross-plan supply-chain threat entry. DPUruNet on NuGet is a well-established package (not a slopquat), but SecuGen.FDxSDKPro.Windows.dll comes from a vendor download with no package integrity check.
+**9. Supply-chain threat for SecuGen/Digital Persona/Futronic NuGet packages not assessed**
+- **Cycle 1 concern L-12:** T-02-04-SC covers ZKTeco NuGet but no equivalent exists for SecuGen FDx SDK Pro (vendor DLL, no NuGet), Digital Persona DPUruNet (NuGet), or Futronic (P/Invoke).
+- **Cycle 2:** No cross-plan supply-chain threat entry was added. **Action needed:** Add to threat model or explicitly defer.
 
 ---
 
-## Suggestions
+## Strengths (Cycle 2)
 
-1. **Execute 02-01 before any other Phase 2 plan** — the interface extension is a prerequisite. Add `Initialize()` and `VendorErrorCode` stubs to `MockScannerAdapter` in the same atomic change.
-
-2. **Add SCAN-06 reconnection logic to ScannerManager** — wrap the active adapter check with retry-on-disconnect: if `_activeAdapter?.IsConnected == false`, re-initialize the same adapter once before trying the full priority list again. Implement exponential backoff if the device is temporarily unplugged.
-
-3. **Add a verify command** to Plan 02-02 that runs Futronic with a known test image or a reference fingerprint to confirm pixel inversion is correct before declaring the adapter done.
-
-4. **Pin NuGet package versions exactly** (e.g., `ZkTecoFingerPrint 1.2.1` → verify hash in Phase 4 installer). Add a comment in the csproj explaining the fallback to raw `zkfp2` P/Invoke if the NuGet is abandoned.
-
-5. **Add ScannerManager.Dispose()** — the composite holds `IScannerAdapter` instances that may own native resources. If `ScannerManager` doesn't implement `IDisposable`, leaked handles may result when the service restarts.
-
-6. **Update the `done` criterion for Plan 02-03** to include verification that `FingerprintAgentService` at line 49 now reads `new ScannerManager(_config, _logger)` instead of `new MockScannerAdapter()`.
-
-7. **Add integration test guidance** — unit tests for the adapters cannot run without hardware. Add `SCANNER_SETUP.md` entries for running with `MockMode=true` to verify end-to-end flow without real hardware.
+- **Cycle 1 review findings were taken seriously** — commit `48d08a8` incorporated all HIGH and most MEDIUM findings from the first cycle into plan text within hours of the first review
+- **D-01 design clarification is explicit** — the rationale for per-call Initialize() is now documented, making the behavior auditable
+- **SCAN-06 retry-on-disconnect** is now in the ScannerManager behavior section of 02-03
+- **Fail-fast on unknown vendor** — `InvalidOperationException` with a clear message is now specified
+- **ZkTecoFingerPrint NuGet pin + fallback** is now documented in both plan and research
 
 ---
 
-## Risk Assessment
+## Risk Assessment — Cycle 2
 
-**Overall: MEDIUM-HIGH**
+**Overall: MEDIUM-HIGH** (unchanged from Cycle 1)
 
-The plans are well-structured and the architecture is sound. However:
+The plans are better — all major Cycle 1 findings are acknowledged and addressed in plan text. However:
 
-- The plans have not been executed — real defects are unknown
-- The interface extension blocking issue must be resolved before 02-02/02-03/02-04 can succeed
-- SCAN-06 gap means the Phase 2 deliverable is incomplete
-- The async/sync mismatch between ZKTecoAdapter and ScannerManager could cause service-mode deadlocks
+- No implementation has been produced across two review cycles
+- Interface extension blocker (H-1, H-2) remains unfixed until 02-01 executes
+- D-01 clarification (H-3) is documented but not verified
+- Futronic pixel inversion (M-5) remains unverified against real SDK
+- Async/sync claim for ZKTeco (M-6) needs Windows Service environment testing
 
 **Risk by plan:**
 | Plan | Risk | Primary Driver |
 |------|------|----------------|
-| 02-01 | MEDIUM | Interface extension + MockScannerAdapter stubs must be atomic |
-| 02-02 | MEDIUM | Pixel inversion correctness unverified; async/sync not confirmed |
-| 02-03 | MEDIUM | ScannerManager re-initializes every adapter on every call (D-01 clarification needed) |
-| 02-04 | MEDIUM | ZKTeco async deadlock risk; NuGet supply-chain |
+| 02-01 | HIGH | Interface + MockScannerAdapter atomic change must succeed on first execution |
+| 02-02 | MEDIUM | Futronic pixel inversion correctness unverified; depends on 02-01 |
+| 02-03 | MEDIUM | ScannerManager must implement retry-on-disconnect; fail-fast vendor config |
+| 02-04 | MEDIUM | ZKTeco async/sync needs Windows Service testing; NuGet supply-chain |
 
 ---
 
-## Verification Coverage
+## Verification Coverage (updated)
 
-The following claims in the plans need direct verification in the actual implementation:
-
-1. `IScannerAdapter.Initialize()` returns `bool` and is called before every `Scan()` in `ScannerManager` → verify with `ScannerManagerTests`
-2. `VendorErrorCode` is set by every adapter on failure → unit test each adapter's error path
-3. 10-second `CancellationTokenSource.CancelAfter` fires even when an adapter's `Scan()` blocks → `ScannerManager_Timeout_ReturnsTimeout` test in `ScannerManagerTests.cs`
-4. ZKTeco pixel values are NOT inverted (D-10) → integration test with known reference image
-5. `ZkTecoFingerPrint` `AcquireFingerprintAsync` does not deadlock in Windows Service context → run as service, not console
-6. `FingerprintAgentService` line 49 creates `new ScannerManager(_config, _logger)` → verify post-02-03
+1. `IScannerAdapter.Initialize()` and `VendorErrorCode` exist and are called by ScannerManager → verify `ScannerManagerTests`
+2. MockScannerAdapter implements `Initialize()` → `true` and `VendorErrorCode` → `"MOCK"` → verify after 02-01
+3. `ScannerManager.Scan()` retries active adapter once on `IsConnected==false` (SCAN-06) → `ScannerManager_RetryOnDisconnect` test
+4. Unknown vendor in config throws `InvalidOperationException` on ScannerManager construction → unit test
+5. ZKTeco `AcquireFingerprintAsync` with internal `.Wait()` does not deadlock in Windows Service context → integration test
+6. Futronic pixel inversion is correct → compare captured image against known reference
+7. `FingerprintAgentService` line 49 creates `ScannerManager` not `MockScannerAdapter` → verify post-02-03
+8. `ScannerManager.Dispose()` closes all adapter resources → disposal test
 
 ---
 
 ## Consensus Summary
 
-*Self-review only — no external AI CLIs available to provide independent corroboration.*
-
-### Agreed Strengths (self-assessed)
-- Architectural decisions (D-01 through D-11) are well-scoped and prevent scope creep
-- Lazy connect pattern avoids persistent connection state across requests
-- Priority-based fallback with total 10s budget is well-specified
-- Wave decomposition allows parallelization while maintaining dependency order
-- Threat models identify critical risks (BadImageFormatException, blocking capture)
+### Agreed Strengths (both cycles)
+- Plans are architecturally sound and well-structured
+- D-01 through D-11 decisions are well-scoped
+- Wave decomposition is appropriate and maintains dependency order
+- Threat models identify critical risks
+- Cycle 1 review feedback was actively incorporated (commit 48d08a8)
 
 ### Agreed Concerns
-- **HIGH:** Interface not extended — all downstream plans blocked until 02-01 executes
-- **HIGH:** MockScannerAdapter needs D-02 stubs before interface extension breaks the build
-- **HIGH:** ScannerManager re-initializes all adapters on every `Scan()` call (D-01 clarification)
-- **MEDIUM:** SCAN-06 reconnection with backoff is entirely absent from all plans
-- **MEDIUM:** ZKTeco `AcquireFingerprintAsync` / ScannerManager sync mismatch could deadlock in service
+- **HIGH (unresolved):** Interface not extended — H-1 from Cycle 1, confirmed in Cycle 2
+- **HIGH (unresolved):** MockScannerAdapter needs stubs — H-2 from Cycle 1, confirmed in Cycle 2
+- **HIGH (partially resolved):** ScannerManager re-init concern — H-3 from Cycle 1, acknowledged with D-01 rationale in 02-03 plan, not yet verified
+- **MEDIUM (unresolved):** Futronic pixel inversion unverified — M-9 from Cycle 1, still not addressed
+- **MEDIUM (partially resolved):** ZKTeco async/sync — M-7 from Cycle 1, plan documents approach but needs Windows Service testing
+- **NEW MEDIUM (unresolved):** ScannerManager.Dispose() missing — suggestion from Cycle 1 not incorporated
+- **NEW MEDIUM (unresolved):** GDI+ disposal verification — L-11 from Cycle 1 not incorporated
 
 ### Divergent Views
-- *None* — single-reviewer self-assessment
+- *None* — single-reviewer self-assessment, no external CLIs to corroborate
