@@ -72,6 +72,7 @@ namespace FingerprintAgent.Service
             try
             {
                 _cts?.Cancel();
+                _cts?.Dispose();
             }
             catch (Exception ex)
             {
