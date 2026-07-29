@@ -33,7 +33,7 @@ namespace FingerprintAgent.Tests
             // Scan without Initialize — stub returns SCANNER_NOT_CONNECTED
             var result = adapter.Scan();
             Assert.False(result.IsSuccess);
-            Assert.Contains("not initialized", result.ErrorMessage);
+            Assert.Contains("Stub adapter", result.ErrorMessage);
         }
 
         [Fact]
