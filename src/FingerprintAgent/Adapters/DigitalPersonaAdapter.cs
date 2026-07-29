@@ -198,15 +198,6 @@ namespace FingerprintAgent.Adapters
             }
         }
 
-        [DllImport("gdi32.dll")]
-        private static extern bool DeleteObject(IntPtr hObject);
-
-        private static void DestroyHbitmap(IntPtr hBitmap)
-        {
-            if (hBitmap != IntPtr.Zero)
-                DeleteObject(hBitmap);
-        }
-
         private static string MapException(Exception ex)
         {
             if (ex is DPFP.Error.Exception dpEx)
