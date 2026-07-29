@@ -70,9 +70,13 @@ namespace FingerprintAgent.Api
                 }
                 catch (ObjectDisposedException) { }
 
+                // Graceful drain: wait up to 30 seconds for in-flight HandleRequest
+                // fire-and-forget tasks to complete before force-terminating.
+                // This gives clients a chance to receive a proper response instead of
+                // a connection-reset TCP error.
                 try
                 {
-                    _workerTask?.Wait(TimeSpan.FromSeconds(5));
+                    _workerTask?.Wait(TimeSpan.FromSeconds(30));
                 }
                 catch (AggregateException)
                 {
