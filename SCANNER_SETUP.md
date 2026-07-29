@@ -37,3 +37,118 @@ ZKTeco returns 8-bit conventional grayscale (0=white, 255=dark ridges). NO pixel
 
 ### ZKTeco Fallback (if NuGet is unavailable)
 If `ZkTecoFingerPrint` NuGet cannot be used, implement the raw `zkfp2` P/Invoke as documented in `02-RESEARCH.md` §5 Option A. Replace the `ZkTecoFingerPrint` NuGet call in `ZKTecoAdapter.cs` with direct DllImport declarations for `ZKFPM_Init`, `ZKFPM_GetDeviceCount`, `ZKFPM_OpenDevice`, and `ZKFPM_AcquireFingerprint`.
+
+---
+
+## SecuGen (SecuGen.FDxSDKPro.Windows + sgfplib.dll)
+
+### Compatible Models
+Hamster Pro 20, Hamster IV (FDU04), Hamster III (FDU03), Hamster Plus, Hamster II
+
+### Prerequisites
+1. Download SecuGen FDx SDK Pro from [secugen.com/download](https://www.secugen.com/download) — free SDK registration required
+2. Copy native DLLs from SDK `Bin\i386\` to the FingerprintAgent install directory:
+   - `sgfplib.dll` — main driver module
+   - `sgfpamx.dll` — algorithm module
+3. The managed wrapper `SecuGen.FDxSDKPro.Windows.dll` is added via HintPath in `FingerprintAgent.csproj` pointing to `lib\SecuGen\`
+
+### Download Links
+- SecuGen FDx SDK Pro: https://www.secugen.com/download (free SDK — evaluation/development license only; verify distribution rights before production)
+
+### Setup Steps
+1. Register at secugen.com and download FDx SDK Pro
+2. Copy `sgfplib.dll` and `sgfpamx.dll` from SDK `Bin\i386\` to `lib\SecuGen\` in the project
+3. Copy `SecuGen.FDxSDKPro.Windows.dll` to `lib\SecuGen\`
+4. The csproj conditional `SecuGenSdkPresent` property auto-detects the DLL and defines `SECUGEN_SDK_PRESENT`
+5. Build with `SECUGEN_SDK_PRESENT` defined to use the real adapter; without it, stub types allow compilation
+
+### Build Requirement
+`<PlatformTarget>x86</PlatformTarget>` is mandatory — all three vendor SDKs are 32-bit. AnyCPU build will crash with `BadImageFormatException` on 64-bit Windows (D-05).
+
+### Image Format
+SecuGen raw buffer is 256-level grayscale. Convert to PNG using the `ToPngGrayscale` helper in `BaseScannerAdapter` (no pixel inversion needed — conventional grayscale).
+
+### Distribution
+All DLLs must go into the same folder as `FingerprintAgent.exe` per D-08.
+
+**License note:** The free SecuGen SDK may be evaluation-only. Verify commercial distribution rights before shipping.
+
+---
+
+## Digital Persona (DPUruNet NuGet + native U.are.U SDK DLLs)
+
+### Compatible Models
+Digital Persona U.are.U 4500, U.are.U 4500B, U.are.U 5160, U.are.U 5300
+
+### Prerequisites
+1. Download the Digital Persona U.are.U SDK from HID Global (developer.hidglobal.com)
+2. Copy all managed and native DLLs from the SDK to `lib\DigitalPersona\`:
+   - `DPFPDevNET.dll`, `DPFPEngNET.dll`, `DPFPGuiNET.dll`, `DPFPShrNET.dll`, `DPFPVerNET.dll` (managed assemblies)
+   - Native DLLs: `DPFPCapture.dll`, `DPFPBase.dll`, and others from the SDK
+
+### NuGet Package
+`DPUruNet` version `1.0.0.1` is used (available in offline cache). The package provides the .NET binding — native DLLs must come from the vendor SDK download.
+
+### Setup Steps
+1. Install Digital Persona U.are.U SDK
+2. Copy all DLLs from the SDK directory to `lib\DigitalPersona\`
+3. Run `dotnet restore` to fetch `DPUruNet 1.0.0.1`
+4. The adapter uses `#if DIGITALPERSONA_SDK_PRESENT` — define this preprocessor constant when the DLLs are present
+
+### Build Requirement
+`<PlatformTarget>x86</PlatformTarget>` — the native DLLs are 32-bit.
+
+### Image Format
+DPUruNet `Sample` converted to `Bitmap` via `SampleConversion` — 8-bit grayscale. No pixel inversion needed.
+
+### Distribution
+All DLLs go into the same folder as `FingerprintAgent.exe` per D-08.
+
+---
+
+## Futronic (ftrScanAPI.dll — 32-bit P/Invoke)
+
+### Compatible Models
+Futronic FS80, FS90, FS60, FM200u
+
+### Prerequisites
+1. Download Futronic Standard SDK v4.2 from [futronic-tech.com/download.html](http://www.futronic-tech.com/download.html) — registration required
+2. Copy `ftrScanAPI.dll` to `lib\Futronic\` or directly alongside `FingerprintAgent.exe`
+
+### Download Links
+- Futronic Standard SDK v4.2: http://www.futronic-tech.com/download.html (registration required)
+
+### Setup Steps
+1. Register and download the Futronic Standard SDK
+2. Copy `ftrScanAPI.dll` from the SDK to `lib\Futronic\` or the install directory
+3. No NuGet package needed — P/Invoke loads the DLL by name at runtime
+
+### Build Requirement
+`<PlatformTarget>x86</PlatformTarget>` is **mandatory and non-negotiable** — `ftrScanAPI.dll` is 32-bit only. AnyCPU process on 64-bit Windows will crash with `DllNotFoundException` or `BadImageFormatException`.
+
+### Image Format — CRITICAL: Pixel Inversion Required
+Futronic raw buffer uses inverted grayscale: 0=dark (ridges), 255=white (background). The `FutronicAdapter` applies `255 - value` per pixel before PNG encoding. If images appear inverted on screen, the inversion is wrong — verify against a known test fingerprint image.
+
+**REVIEW NOTE:** Pixel inversion in `FutronicAdapter` is based on research sources, not official documentation. Post-integrate verification against a known-good test image is required.
+
+### Distribution
+Copy `ftrScanAPI.dll` to the same folder as `FingerprintAgent.exe` per D-08.
+
+**License note:** Futronic Standard SDK may be watermarked or evaluation-only. Verify distribution rights for production.
+
+---
+
+## ScannerManager — Build & Runtime Summary
+
+### All Vendors
+- **PlatformTarget:** `x86` (non-negotiable — all vendor SDKs are 32-bit)
+- **Distribution:** All vendor DLLs must be in the same folder as `FingerprintAgent.exe`
+- **NuGet packages used:** `DPUruNet 1.0.0.1` (Digital Persona), `ZkTecoFingerPrint 1.2.1` (ZKTeco), `SecuGen.FDxSDKPro.Windows` (via HintPath to lib\SecuGen\)
+
+### Priority Order (default)
+`config.json` → `Scanner.Priority: ["SecuGen", "DigitalPersona", "Futronic", "ZKTeco"]`
+
+ScannerManager tries adapters in this order on each `/api/capture` call, with the first successful scan winning. If all fail, returns `SCANNER_NOT_CONNECTED`.
+
+### MockMode
+Set `config.Scanner.MockMode: true` to bypass all real scanners and use `MockScannerAdapter` for development/testing without hardware.
