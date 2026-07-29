@@ -17,8 +17,10 @@ namespace FingerprintAgent.Logging
 
     public class AgentLogger : IDisposable
     {
+        // Matches base64 substrings of 40+ chars anywhere in a string (not just full-string).
+        // Allows detection of embedded image data like "data:image/png;base64,/9j/4AAQ...".
         private static readonly Regex Base64Pattern = new Regex(
-            "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})$",
+            "(?:[A-Za-z0-9+/]{4}){10,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})?",
             RegexOptions.Compiled);
 
         private readonly string _filePath;
