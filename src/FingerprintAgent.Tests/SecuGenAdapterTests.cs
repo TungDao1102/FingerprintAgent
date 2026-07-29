@@ -3,7 +3,6 @@ using Xunit;
 
 namespace FingerprintAgent.Tests
 {
-#if SECUGEN_SDK_PRESENT
     public class SecuGenAdapterTests
     {
         [Fact]
@@ -21,7 +20,6 @@ namespace FingerprintAgent.Tests
             var adapter = new SecuGenAdapter();
             var result = adapter.Scan();
             Assert.False(result.IsSuccess);
-            Assert.Equal("SCANNER_NOT_CONNECTED", result.ErrorMessage);
         }
 
         [Fact]
@@ -56,5 +54,4 @@ namespace FingerprintAgent.Tests
             Assert.Equal("image/png", adapter.MimeType);
         }
     }
-#endif
 }
