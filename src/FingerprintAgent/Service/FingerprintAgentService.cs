@@ -108,7 +108,7 @@ namespace FingerprintAgent.Service
             {
                 _healthCheckTimer?.Dispose();
             }
-            catch { }
+            catch (Exception ex) { _logger?.Debug(null, $"healthCheckTimer disposal threw: {ex.Message}"); }
 
             try
             {
