@@ -108,7 +108,7 @@ namespace FingerprintAgent.Service
             {
                 _healthCheckTimer?.Dispose();
             }
-            catch (Exception ex) { _logger?.Debug(null, $"healthCheckTimer disposal threw: {ex.Message}"); }
+            catch { }
 
             try
             {
@@ -208,6 +208,10 @@ namespace FingerprintAgent.Service
                 {
                     var backoffStep = (_scanner as ScannerManager)?.BackoffStep ?? 0;
                     _logger?.Warn(null, $"HealthCheck: scanner not connected (backoff step={backoffStep})");
+                }
+                else
+                {
+                    _logger?.Debug(null, "HealthCheck: scanner connected");
                 }
             }
             catch (Exception ex)
