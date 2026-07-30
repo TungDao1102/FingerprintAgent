@@ -17,6 +17,11 @@ namespace FingerprintAgent.Adapters
     ///
     /// Unknown vendor names in config.Scanner.Priority throw InvalidOperationException
     /// on construction — fail-fast on config typos, not silent reduction (T-02-09).
+    ///
+    /// Lock ordering policy (DO-01):
+    /// 1. Always acquire _adapterLock before _backoffLock
+    /// 2. Never acquire _backoffLock without also holding _adapterLock
+    /// 3. UpdatePriority() must NOT be modified to take _backoffLock
     /// </summary>
     public class ScannerManager : IScannerAdapter, IDisposable
     {
@@ -127,7 +132,6 @@ namespace FingerprintAgent.Adapters
             _logger = logger;
             _mockMode = false;
             _cts = new CancellationTokenSource();
-            _activeAdapter = adapters.Length > 0 ? adapters[0] : null;
         }
 
         /// <summary>
