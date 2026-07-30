@@ -149,8 +149,10 @@ namespace FingerprintAgent.Adapters
             if (newPriority == null || newPriority.Length == 0)
                 return;
 
+            IScannerAdapter[] oldAdapters;
             lock (_adapterLock)
             {
+                oldAdapters = _adapters;
                 var vendorList = new List<IScannerAdapter>();
                 foreach (var vendorName in newPriority)
                 {
@@ -158,6 +160,19 @@ namespace FingerprintAgent.Adapters
                     vendorList.Add(adapter);
                 }
                 _adapters = vendorList.ToArray();
+            }
+
+            // Dispose old adapters that are NOT the active adapter
+            // (active adapter stays alive; disposed only at ScannerManager shutdown)
+            if (oldAdapters != null)
+            {
+                IScannerAdapter active;
+                lock (_adapterLock) { active = _activeAdapter; }
+                foreach (var adapter in oldAdapters)
+                {
+                    if (!ReferenceEquals(adapter, active))
+                        (adapter as IDisposable)?.Dispose();
+                }
             }
 
             _logger?.Info(null, $"ScannerManager: priority updated, new order=[{string.Join(", ", newPriority)}]");
