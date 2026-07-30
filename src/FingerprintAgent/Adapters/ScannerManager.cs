@@ -121,7 +121,7 @@ namespace FingerprintAgent.Adapters
         /// Internal constructor for testing: inject adapters directly, bypassing config-based resolution.
         /// Allows ScannerManagerTests to exercise priority fallback and backoff logic.
         /// </summary>
-        internal ScannerManager(IScannerAdapter[] adapters, AgentLogger logger)
+        public ScannerManager(IScannerAdapter[] adapters, AgentLogger logger)
         {
             _adapters = adapters ?? throw new ArgumentNullException(nameof(adapters));
             _logger = logger;
