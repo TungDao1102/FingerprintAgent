@@ -127,6 +127,7 @@ namespace FingerprintAgent.Adapters
             _logger = logger;
             _mockMode = false;
             _cts = new CancellationTokenSource();
+            _activeAdapter = adapters.Length > 0 ? adapters[0] : null;
         }
 
         /// <summary>
