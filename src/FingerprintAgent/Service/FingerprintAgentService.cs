@@ -18,6 +18,8 @@ namespace FingerprintAgent.Service
         private AgentConfig _config;
         private CancellationTokenSource _cts;
         private AgentLogger _logger;
+        private Timer _healthCheckTimer;
+        private readonly TimeSpan _healthCheckInterval = TimeSpan.FromSeconds(30);
 
         public FingerprintAgentService()
         {
@@ -50,6 +52,7 @@ namespace FingerprintAgent.Service
             _scanner = new ScannerManager(_config, _logger);
             _httpServer = new HttpServer(_config, _scanner, _logger);
             _httpServer.Start();
+            StartHealthCheckTimer();
 
             _logger.Info(startCid, "Service started");
             TryWriteEventLog("Service started successfully", EventLogEntryType.Information);
@@ -80,6 +83,12 @@ namespace FingerprintAgent.Service
                 shutdownError = ex;
                 _logger?.Error(stopCid, $"Error cancelling token: {ex.Message}");
             }
+
+            try
+            {
+                _healthCheckTimer?.Dispose();
+            }
+            catch { }
 
             try
             {
@@ -153,6 +162,28 @@ namespace FingerprintAgent.Service
             catch (Exception ex)
             {
                 Debug.WriteLine($"[FingerprintAgent] Failed to write event log: {ex.Message}");
+            }
+        }
+
+        private void StartHealthCheckTimer()
+        {
+            _healthCheckTimer = new Timer(HealthCheckCallback, null, _healthCheckInterval, _healthCheckInterval);
+        }
+
+        private void HealthCheckCallback(object state)
+        {
+            try
+            {
+                bool connected = _scanner.IsConnected;
+                if (!connected)
+                {
+                    var backoffStep = (_scanner as ScannerManager)?.BackoffStep ?? 0;
+                    _logger?.Warn(null, $"HealthCheck: scanner not connected (backoff step={backoffStep})");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.Error(null, $"HealthCheck: callback threw {ex.GetType().Name}: {ex.Message}");
             }
         }
 
