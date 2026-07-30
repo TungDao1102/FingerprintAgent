@@ -106,15 +106,6 @@ namespace FingerprintAgent.Service
 
             try
             {
-                _healthCheckTimer?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                _logger?.Debug(null, $"Health check timer dispose error: {ex.Message}");
-            }
-
-            try
-            {
                 _httpServer?.Stop();
             }
             catch (Exception ex)
@@ -150,6 +141,17 @@ namespace FingerprintAgent.Service
             {
                 shutdownError = ex;
                 _logger?.Error(stopCid, $"Error disposing scanner: {ex.Message}");
+            }
+
+            try
+            {
+                // Dispose timer AFTER scanner to prevent a queued health check callback
+                // from accessing a disposed scanner (WR-01)
+                _healthCheckTimer?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.Debug(null, $"Health check timer dispose error: {ex.Message}");
             }
 
             // ZkTecoFingerHost.Close() is safe to call once — static teardown for all ZKTeco sessions.
