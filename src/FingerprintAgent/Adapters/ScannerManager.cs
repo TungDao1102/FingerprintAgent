@@ -17,11 +17,6 @@ namespace FingerprintAgent.Adapters
     ///
     /// Unknown vendor names in config.Scanner.Priority throw InvalidOperationException
     /// on construction — fail-fast on config typos, not silent reduction (T-02-09).
-    ///
-    /// Lock ordering policy (DO-01):
-    /// 1. Always acquire _adapterLock before _backoffLock
-    /// 2. Never acquire _backoffLock without also holding _adapterLock
-    /// 3. UpdatePriority() must NOT be modified to take _backoffLock
     /// </summary>
     public class ScannerManager : IScannerAdapter, IDisposable
     {
@@ -140,6 +135,10 @@ namespace FingerprintAgent.Adapters
         /// Backoff state is also preserved (not reset) on priority change.
         /// Unknown vendor names throw InvalidOperationException (fail-fast, consistent with constructor).
         /// Thread-safe.
+        ///
+        /// Note: old adapters are NOT disposed here because _activeAdapter might reference
+        /// one of them. This is an intentional trade-off (D-09). Dispose is called only
+        /// when ScannerManager.Dispose() is called at service shutdown.
         /// </summary>
         public void UpdatePriority(string[] newPriority)
         {
