@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Security;
 using System.ServiceProcess;
 using System.Threading;
@@ -20,6 +21,8 @@ namespace FingerprintAgent.Service
         private AgentLogger _logger;
         private Timer _healthCheckTimer;
         private readonly TimeSpan _healthCheckInterval = TimeSpan.FromSeconds(30);
+        private ConfigFileWatcher _configWatcher;
+        private readonly object _configLock = new object();
 
         public FingerprintAgentService()
         {
@@ -53,6 +56,23 @@ namespace FingerprintAgent.Service
             _httpServer = new HttpServer(_config, _scanner, _logger);
             _httpServer.Start();
             StartHealthCheckTimer();
+
+            // Start config file watcher after service is fully running
+            try
+            {
+                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+                _configWatcher = new ConfigFileWatcher(configPath, _logger);
+                _configWatcher.ConfigReloaded += OnConfigReloaded;
+                _logger.Info(startCid, "ConfigFileWatcher: started watching config.json");
+            }
+            catch (Exception ex)
+            {
+                _configWatcher?.Dispose();
+                _configWatcher = null;
+                var msg = $"Failed to start ConfigFileWatcher: {ex.Message}";
+                _logger?.Error(startCid, msg);
+                throw;
+            }
 
             _logger.Info(startCid, "Service started");
             TryWriteEventLog("Service started successfully", EventLogEntryType.Information);
@@ -108,6 +128,15 @@ namespace FingerprintAgent.Service
             {
                 shutdownError = ex;
                 _logger?.Error(stopCid, $"Error disposing HTTP server: {ex.Message}");
+            }
+
+            try
+            {
+                _configWatcher?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.Error(stopCid, $"Error disposing ConfigFileWatcher: {ex.Message}");
             }
 
             try
@@ -185,6 +214,26 @@ namespace FingerprintAgent.Service
             {
                 _logger?.Error(null, $"HealthCheck: callback threw {ex.GetType().Name}: {ex.Message}");
             }
+        }
+
+        private void OnConfigReloaded(AgentConfig newConfig)
+        {
+            var cid = AgentLogger.GenerateCorrelationId();
+
+            // D-06: Only reload ScannerConfig + CorsConfig
+            lock (_configLock)
+            {
+                _config = newConfig;
+            }
+
+            // Update CORS immediately
+            _httpServer?.UpdateCorsConfig(newConfig.Cors);
+
+            // D-09: active adapter stays the same, but new priority applies on next failure
+            var scannerManager = _scanner as ScannerManager;
+            scannerManager?.UpdatePriority(newConfig.Scanner.Priority);
+
+            _logger?.Info(cid, $"ConfigFileWatcher: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], cors mode={newConfig.Cors.Mode}");
         }
 
         public void StartConsole()
