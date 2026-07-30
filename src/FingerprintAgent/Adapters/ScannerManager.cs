@@ -249,7 +249,9 @@ namespace FingerprintAgent.Adapters
             {
                 totalCts.CancelAfter(TimeSpan.FromSeconds(10));
 
-                foreach (var adapter in _adapters)
+                IScannerAdapter[] currentAdapters;
+                lock (_adapterLock) { currentAdapters = _adapters; }
+                foreach (var adapter in currentAdapters)
                 {
                     if (totalCts.Token.IsCancellationRequested)
                     {
