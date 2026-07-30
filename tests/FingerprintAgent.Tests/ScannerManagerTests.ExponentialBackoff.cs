@@ -55,7 +55,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void BackoffStep_ResetsOnSuccessfulCapture()
+        public void BackoffStep_NotAffected_WhenCapturesAlwaysSucceed()
         {
             var alwaysFailing = new MockScannerAdapterWithSettableProperties
             {
