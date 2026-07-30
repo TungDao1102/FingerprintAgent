@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
-status: unknown
-stopped_at: Phase 03 context gathered
-last_updated: "2026-07-30T09:07:00.000Z"
+status: complete
+stopped_at: Phase 03 execution complete — all plans done
+last_updated: "2026-07-30T12:00:00.000Z"
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 8
-  completed_plans: 4
-  percent: 50
+  completed_phases: 3
+  total_plans: 11
+  completed_plans: 11
+  percent: 100
 ---
 
 # State: FingerprintAgent
@@ -20,13 +20,13 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 **Core value:** Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhất một trong các máy quét vân tay phổ biến, và trả về ảnh PNG đáng tin cậy cho ứng dụng web qua HTTP API địa phương.
-**Current focus:** Phase 03 — resilience-runtime-reconfiguration
+**Current focus:** Phase 04 — planning available
 
 ## Current Phase
 
-**Phase 3: Resilience & Runtime Reconfiguration**
+**Phase 3: Resilience & Runtime Reconfiguration** ✓ COMPLETE
 
-- Status: ◆ Context gathered
+- Status: ◆ All 3 plans executed successfully
 - Goal: Service tự phục hồi khi scanner mất kết nối, hỗ trợ reload cấu hình runtime, và xử lý lỗi capture rõ ràng.
 - Success criteria: scanner disconnect → SCANNER_NOT_CONNECTED + retry; exponential backoff 10s/30s/60s/120s; config reload without restart; capture timeout → 504; SDK error → 500.
 
@@ -36,8 +36,41 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 |-------|--------|-------|----------|
 | 1     | ●      | 5/5   | 100%     |
 | 2     | ●      | 4/4   | 100%     |
-| 3     | ○      | 0/3   | 0%       |
+| 3     | ●      | 3/3   | 100%     |
 | 4     | ○      | 0/4   | 0%       |
+
+## Plan 03-01 Completed
+
+**Exponential Backoff + Health Check Loop**
+
+- `ScannerManager` — `BackoffDelaysSeconds = {10,30,60,120}`, `_backoffStep/_backoffUntil/_backoffLock`; `InBackoff`/`BackoffStep` properties; `ApplyBackoff()` at all-adapter-failure exit; backoff resets on any `IsSuccess=true` capture; D-04 hot-plug retry (lines 146–170) preserved
+- `FingerprintAgentService` — `System.Threading.Timer` fires every 30s, observes `IsConnected` only (D-17), logs warning with backoff step; disposed in own try-catch before `httpServer.Stop()` in `OnStop`
+- `HealthHandler` — exposes `inBackoff`, `backoffStep`, `status`; returns HTTP 503 only when step=3 AND disconnected
+- Release build 0 warnings / 0 errors
+
+## Plan 03-02 Completed
+
+**Config Reload (CFG-03)**
+
+- `ConfigFileWatcher` — `FileSystemWatcher` + 300ms debounce timer; fires `ConfigReloaded(Action<AgentConfig>)` after validate parse; bad config keeps old config, logs error, no crash (D-08); disposal order: timer first then watcher
+- `CorsMiddleware.UpdateConfig()` — thread-safe under `_corsLock`; replaces `_allowedOrigins` HashSet atomically
+- `HttpServer.UpdateCorsConfig()` — integration point between `ConfigFileWatcher` and `CorsMiddleware`
+- `ScannerManager.UpdatePriority()` — recreates adapter list under `_adapterLock`; active adapter and backoff state untouched (D-09)
+- `FingerprintAgentService` — wires `ConfigFileWatcher` in `OnStart`, disposes in `OnStop` (own try-catch, before scanner); calls `UpdateCorsConfig` and `UpdatePriority` on reload
+- Release build 0 warnings / 0 errors
+
+## Plan 03-03 Completed
+
+**Error Code Mapping + Tests**
+
+- `CaptureResponse` — `VendorErrorCode` (JsonProperty "vendorErrorCode") and `Timestamp` (ISO 8601) fields added; null on success, populated on error
+- `CaptureHandler` — `MapErrorCode()` method: `SCANNER_NOT_CONNECTED→503`, `CAPTURE_TIMEOUT→504`, `CAPTURE_FAILED→500`, `INVALID_REQUEST→400`; `WriteErrorResponse` includes `VendorErrorCode` + `Timestamp`
+- `CaptureResult.Ok()` — new static factory method added; `ScannerManager` test constructor made public (InternalsVisibleTo issue)
+- `MockScannerAdapterWithSettableProperties` — test double with settable `IsConnectedValue`, `InitializeResult`, `ScanResult`, `VendorErrorCodeValue`
+- `CaptureHandlerTestFixture` — real `HttpListener`-based integration test fixture
+- Backoff unit tests + in-flight fail tests in `ScannerManagerTests.ExponentialBackoff.cs`
+- Error handling integration tests (503/504/500/400) in `ErrorHandlingTests.cs`
+- Release build 0 warnings / 0 errors
 
 ## Plan 01-04 Completed
 
