@@ -221,6 +221,8 @@ namespace FingerprintAgent.Adapters
 #else
 // Stub implementation when DIGITALPERSONA_SDK_PRESENT is not defined.
 // Allows compilation and unit testing without the vendor SDK DLL present.
+using System;
+
 namespace FingerprintAgent.Adapters
 {
     public class DigitalPersonaAdapter : IScannerAdapter, IDisposable

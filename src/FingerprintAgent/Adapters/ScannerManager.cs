@@ -145,7 +145,8 @@ namespace FingerprintAgent.Adapters
 
             // SCAN-06 backoff: retry active adapter once if it was previously connected
             // but is now disconnected (temporary disconnection / device busy)
-            var current = ActiveAdapter;
+            IScannerAdapter current;
+            lock (_adapterLock) { current = _activeAdapter; }
             if (current != null && !current.IsConnected)
             {
                 _logger?.Warn(null, "ScannerManager: active adapter disconnected, retrying once");

@@ -12,8 +12,9 @@ namespace FingerprintAgent.Adapters
     /// Implements pixel inversion (255 - rawValue) per D-07 before PNG encoding.
     /// REVIEW NOTE (Futronic pixel inversion): ASSUMPTION — research cites "multiple sources" for inversion,
     /// not Futronic SDK documentation. If inversion is wrong, all Futronic images appear inverted.
-    /// TODO (Phase 2 post-integrate): verify against known test fingerprint image — if display is inverted,
-    /// inversion is incorrect and must be removed.
+    /// TODO (pre-production): verify against a known test fingerprint image — compare raw SDK output
+    /// against reference. If conventional grayscale (0=white, 255=dark ridges), inversion is wrong
+    /// and must be removed. If ridges appear white-on-black, inversion is correct.
     /// </summary>
     public class FutronicAdapter : IScannerAdapter, IDisposable
     {
@@ -271,6 +272,8 @@ namespace FingerprintAgent.Adapters
 #else
 // Stub implementation when FUTRONIC_SDK_PRESENT is not defined.
 // Allows compilation and unit testing without the vendor SDK DLL present.
+using System;
+
 namespace FingerprintAgent.Adapters
 {
     public class FutronicAdapter : IScannerAdapter, IDisposable
