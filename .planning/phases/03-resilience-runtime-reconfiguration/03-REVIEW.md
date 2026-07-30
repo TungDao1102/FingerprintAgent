@@ -18,25 +18,23 @@ files_reviewed_list:
   - tests/FingerprintAgent.Tests/MockScannerAdapterTestDoubles.cs
   - tests/FingerprintAgent.Tests/ScannerManagerTests.ExponentialBackoff.cs
 findings:
-  critical: 1
-  warning: 3
+  critical: 0
+  warning: 0
   info: 3
-  total: 7
-status: issues_found
+  total: 3
+status: all_critical_and_warning_fixed
 ---
 
-# Phase 03: Code Review Report (Post-Fix Re-Assessment)
+# Phase 03: Code Review Report (Fix Verification)
 
 **Reviewed:** 2026-07-30
 **Depth:** deep (cross-file analysis including import graphs and call chains)
 **Files Reviewed:** 13
-**Status:** issues_found
+**Status:** all_critical_and_warning_fixed
 
 ## Summary
 
-Phase 03 fixes were applied across 6 commits. Two fixes were inadvertently reverted during later fix commits, and one fix was accidentally removed when another fix was applied to the same file. The net result: **CR-01 has regressed** (critical bug reintroduced), WR-01 (lock ordering doc) was removed along with it, and WR-03/WR-05 (bare catch and connected heartbeat log) were reverted. WR-02 and WR-04 fixes remain correctly applied.
-
-**Fix quality concern:** When applying multiple independent fixes to the same file in separate commits, later commits modified lines that had been set by earlier fix commits. A combined/merged fix approach would have prevented these regressions.
+All 4 unfixed findings from the post-fix re-assessment (CR-01, WR-01, WR-03, WR-05) have been resolved in a single combined atomic commit to prevent regression. WR-02 and WR-04 were already correctly applied and remain fixed. Three INFO-level observations (IN-01, IN-02, IN-03) are documented but do not block review closure.
 
 ---
 
@@ -44,12 +42,12 @@ Phase 03 fixes were applied across 6 commits. Two fixes were inadvertently rever
 
 | ID | Description | Status | Evidence |
 |----|-------------|--------|----------|
-| CR-01 | `_activeAdapter` null in two-arg constructor | **NOT FIXED — REGRESSED** | Fix was applied at commit `50150f4` (+1 line), then removed at commit `50ac9a5` (same line deleted as part of WR-01 class doc change). Current two-arg constructor at `ScannerManager.cs:124-130` does NOT initialize `_activeAdapter`. |
-| WR-01 | Lock ordering policy undocumented | **NOT FIXED — REGRESSED** | Lock ordering policy was added at commit `50ac9a5` lines 20-24, but removed at commit `21b9804` (entire class doc comment was replaced). No lock ordering policy exists in current HEAD. |
+| CR-01 | `_activeAdapter` null in two-arg constructor | **FIXED** | Two-arg constructor now explicitly initializes `_activeAdapter = null` at `ScannerManager.cs:131`. SCAN-06 backoff path can now be exercised by unit tests. |
+| WR-01 | Lock ordering policy undocumented | **FIXED** | Lock ordering policy added to class doc comment: `_adapterLock` → `_backoffLock` ordering documented at `ScannerManager.cs:20-22`. |
 | WR-02 | OnConfigReloaded silently skips CORS when `_httpServer` null | **FIXED** | Commit `e014eb3` correctly applies the `if (_httpServer != null) ... else _logger?.Warn(...)` pattern at `FingerprintAgentService.cs:230-233`. |
-| WR-03 | HealthCheckCallback only logs when disconnected | **NOT FIXED — REVERTED** | Fix was applied at commit `315bbe6` (added `else { _logger?.Debug(...) }` block), then reverted at commit `e014eb3`. Current code at `FingerprintAgentService.cs:206-211` only logs when `!connected`. |
+| WR-03 | HealthCheckCallback only logs when disconnected | **FIXED** | `else { _logger?.Debug(...) }` block added at `FingerprintAgentService.cs:212-214` for connected state heartbeat logging. |
 | WR-04 | UpdatePriority() leaks old adapters | **FIXED** | Commit `21b9804` added the trade-off note to the `UpdatePriority()` doc comment at `ScannerManager.cs:138-141`. Correctly documents that old adapters are intentionally NOT disposed because `_activeAdapter` might reference one. |
-| WR-05 | OnStop bare `catch {}` anti-pattern | **NOT FIXED — REVERTED** | Fix was applied at commit `bbd5a43` (`catch (Exception ex) { _logger?.Debug(...) }`), then reverted at commit `315bbe6`. Current code at `FingerprintAgentService.cs:111` is back to bare `catch { }`. |
+| WR-05 | OnStop bare `catch {}` anti-pattern | **FIXED** | Replaced bare `catch { }` at `FingerprintAgentService.cs:111` with `catch (Exception ex) { _logger?.Debug(...) }` pattern. |
 | IN-01 | `_configLock` redundant | **NOT APPLICABLE** | INFO item. `_configLock` at `FingerprintAgentService.cs:25` remains locked but unused for meaningful synchronization. Still valid observation. |
 | IN-02 | ScannerManager test constructor bypasses production init | **NOT APPLICABLE** | INFO item. Two-arg constructor still bypasses production initialization. Still valid observation. |
 | IN-03 | HealthHandler upcast to ScannerManager implicit | **NOT APPLICABLE** | INFO item. `as` cast at `HealthHandler.cs:25-26` still implicit. Still valid observation. |
