@@ -57,14 +57,6 @@ namespace FingerprintAgent.Configuration
             {
                 _logger?.Info(null, "ConfigFileWatcher: config changed, reloading");
 
-                // Read with FileShare.ReadWrite to avoid locking issues while file is open by another process
-                string json;
-                using (var fs = new FileStream(_configPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-                using (var reader = new StreamReader(fs))
-                {
-                    json = reader.ReadToEnd();
-                }
-
                 // Parse via ConfigLoader
                 var directory = Path.GetDirectoryName(_configPath);
                 var newConfig = ConfigLoader.LoadFromDirectory(directory);
