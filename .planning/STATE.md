@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
 status: unknown
-stopped_at: Phase 02 context gathered
-last_updated: "2026-07-29T06:34:59.589Z"
+stopped_at: Phase 03 context gathered
+last_updated: "2026-07-30T09:07:00.000Z"
 progress:
-  total_phases: 2
-  completed_phases: 1
+  total_phases: 3
+  completed_phases: 2
   total_plans: 8
   completed_plans: 4
   percent: 50
@@ -20,22 +20,22 @@ progress:
 See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 **Core value:** Agent luôn sẵn sàng trên máy bệnh viện, kết nối được ít nhất một trong các máy quét vân tay phổ biến, và trả về ảnh PNG đáng tin cậy cho ứng dụng web qua HTTP API địa phương.
-**Current focus:** Phase 02 — multi-vendor-scanner-adapters
+**Current focus:** Phase 03 — resilience-runtime-reconfiguration
 
 ## Current Phase
 
-**Phase 1: Foundation — Windows Service + HTTP API skeleton**
+**Phase 3: Resilience & Runtime Reconfiguration**
 
-- Status: ◆ Walking skeleton executed
-- Goal: Agent chạy được như Windows Service, phản hồi `/health` và `/api/capture` với mock scanner, có cấu hình `config.json` + CORS.
-- Success criteria: install service, start, respond /health, mock /api/capture returns PNG+hash, config + CORS works.
+- Status: ◆ Context gathered
+- Goal: Service tự phục hồi khi scanner mất kết nối, hỗ trợ reload cấu hình runtime, và xử lý lỗi capture rõ ràng.
+- Success criteria: scanner disconnect → SCANNER_NOT_CONNECTED + retry; exponential backoff 10s/30s/60s/120s; config reload without restart; capture timeout → 504; SDK error → 500.
 
 ## Phase Progress
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 1     | ◐      | 4/5   | 80%      |
-| 2     | ○      | 0/5   | 0%       |
+| 1     | ●      | 5/5   | 100%     |
+| 2     | ●      | 4/4   | 100%     |
 | 3     | ○      | 0/3   | 0%       |
 | 4     | ○      | 0/4   | 0%       |
 
