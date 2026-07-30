@@ -6,8 +6,9 @@ namespace FingerprintAgent.Api
 {
     public class CorsMiddleware
     {
-        private readonly string _mode;
-        private readonly HashSet<string> _allowedOrigins;
+        private string _mode;
+        private HashSet<string> _allowedOrigins;
+        private readonly object _corsLock = new object();
 
         public CorsMiddleware(string mode, string[] allowedOrigins)
         {
@@ -15,6 +16,21 @@ namespace FingerprintAgent.Api
             _allowedOrigins = new HashSet<string>(
                 allowedOrigins ?? Array.Empty<string>(),
                 StringComparer.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Updates CORS configuration at runtime. Thread-safe.
+        /// null mode is treated as "wildcard". null allowedOrigins is treated as empty.
+        /// </summary>
+        public void UpdateConfig(string mode, string[] allowedOrigins)
+        {
+            lock (_corsLock)
+            {
+                _mode = mode ?? "wildcard";
+                _allowedOrigins = new HashSet<string>(
+                    allowedOrigins ?? Array.Empty<string>(),
+                    StringComparer.OrdinalIgnoreCase);
+            }
         }
 
         public bool HandleCorsPreflight(HttpListenerRequest request, HttpListenerResponse response)
@@ -26,9 +42,13 @@ namespace FingerprintAgent.Api
             if (string.IsNullOrEmpty(origin))
                 return false;
 
+            string mode;
+            HashSet<string> allowedOrigins;
+            lock (_corsLock) { mode = _mode; allowedOrigins = _allowedOrigins; }
+
             ApplyCorsHeaders(response, origin);
 
-            if (_mode == "allowlist" && !_allowedOrigins.Contains(origin))
+            if (mode == "allowlist" && !allowedOrigins.Contains(origin))
             {
                 response.StatusCode = 403;
                 response.Close();
@@ -45,11 +65,15 @@ namespace FingerprintAgent.Api
             if (string.IsNullOrEmpty(origin))
                 return;
 
-            if (_mode == "wildcard")
+            string mode;
+            HashSet<string> allowedOrigins;
+            lock (_corsLock) { mode = _mode; allowedOrigins = _allowedOrigins; }
+
+            if (mode == "wildcard")
             {
                 response.Headers.Add("Access-Control-Allow-Origin", "*");
             }
-            else if (_mode == "allowlist" && _allowedOrigins.Contains(origin))
+            else if (mode == "allowlist" && allowedOrigins.Contains(origin))
             {
                 response.Headers.Add("Access-Control-Allow-Origin", origin);
                 response.Headers.Add("Vary", "Origin");
