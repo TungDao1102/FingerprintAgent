@@ -39,7 +39,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Request body is empty";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -52,7 +52,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Invalid JSON in request body";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -60,7 +60,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Missing required field: thamChieuId";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -68,11 +68,22 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Missing required field: maPhieu";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST");
+                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
                 CaptureResult result = scanner.Scan();
+
+                if (!result.IsSuccess)
+                {
+                    var (statusCode, errorCode) = MapErrorCode(result.ErrorCode);
+                    var vendorErrorCode = scanner.VendorErrorCode;
+                    var timestamp = DateTime.UtcNow.ToString("O");
+
+                    _logger?.Error(correlationId, $"Capture failed — {errorCode}: {result.ErrorMessage}");
+                    WriteErrorResponse(context, statusCode, false, result.ErrorMessage, errorCode, vendorErrorCode, timestamp, correlationId);
+                    return;
+                }
 
                 var imageBytes = result.ImageBytes ?? Array.Empty<byte>();
                 var response = new CaptureResponse
@@ -83,7 +94,8 @@ namespace FingerprintAgent.Api
                     CapturedAt = DateTime.UtcNow.ToString("O"),
                     DeviceId = scanner.DeviceId,
                     VerificationData = result.VerificationData,
-                    ErrorMessage = null
+                    ErrorMessage = null,
+                    ErrorCode = null
                 };
 
                 _logger?.Info(correlationId, $"Capture completed — deviceId: {scanner.DeviceId}");
@@ -101,17 +113,38 @@ namespace FingerprintAgent.Api
             {
                 var errorMessage = $"Capture failed: {ex.Message}";
                 _logger?.Error(correlationId, $"Capture failed — CAPTURE_FAILED: {ex.Message}");
-                WriteErrorResponse(context, 500, false, errorMessage, "CAPTURE_FAILED");
+                WriteErrorResponse(context, 500, false, errorMessage, "CAPTURE_FAILED", null, null, correlationId);
             }
         }
 
-        private static void WriteErrorResponse(HttpListenerContext context, int statusCode, bool isSuccess, string errorMessage, string errorCode)
+        private static (int statusCode, string errorCode) MapErrorCode(string errorCode)
+        {
+            switch (errorCode)
+            {
+                case "SCANNER_NOT_CONNECTED":
+                    return (503, errorCode);
+                case "CAPTURE_TIMEOUT":
+                    return (504, errorCode);
+                case "INVALID_REQUEST":
+                    return (400, errorCode);
+                case "CAPTURE_FAILED":
+                    return (500, errorCode);
+                case "CONFIG_ERROR":
+                    return (500, errorCode);
+                default:
+                    return (500, errorCode ?? "CAPTURE_FAILED");
+            }
+        }
+
+        private void WriteErrorResponse(HttpListenerContext context, int statusCode, bool isSuccess, string errorMessage, string errorCode, string vendorErrorCode, string timestamp, string correlationId = null)
         {
             var response = new CaptureResponse
             {
                 IsSuccess = isSuccess,
                 ErrorMessage = errorMessage,
-                ErrorCode = errorCode
+                ErrorCode = errorCode,
+                VendorErrorCode = vendorErrorCode,
+                Timestamp = timestamp ?? DateTime.UtcNow.ToString("O")
             };
 
             string json = JsonConvert.SerializeObject(response);
