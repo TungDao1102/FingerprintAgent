@@ -175,6 +175,14 @@ namespace FingerprintAgent.Api
         }
 
         /// <summary>
+        /// Updates CORS configuration at runtime. Thread-safe.
+        /// </summary>
+        public void UpdateCorsConfig(CorsConfig newCors)
+        {
+            _cors.UpdateConfig(newCors.Mode, newCors.AllowedOrigins);
+        }
+
+        /// <summary>
         /// Disposes the server. Calls Stop() internally.
         /// Safe to call multiple times (idempotent) - subsequent calls return immediately.
         /// </summary>
