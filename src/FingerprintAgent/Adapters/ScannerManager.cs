@@ -29,6 +29,11 @@ namespace FingerprintAgent.Adapters
         private IScannerAdapter _activeAdapter;
         private readonly object _adapterLock = new object();
 
+        private int _backoffStep = 0;
+        private DateTime _backoffUntil = DateTime.MinValue;
+        private readonly object _backoffLock = new object();
+        private static readonly int[] BackoffDelaysSeconds = { 10, 30, 60, 120 };
+
         private IScannerAdapter ActiveAdapter
         {
             get { lock (_adapterLock) return _activeAdapter; }
@@ -52,6 +57,24 @@ namespace FingerprintAgent.Adapters
         public string VendorErrorCode => _mockMode
             ? "MOCK"
             : (ActiveAdapter?.VendorErrorCode ?? "NO_ADAPTER");
+
+        public bool InBackoff
+        {
+            get
+            {
+                lock (_backoffLock)
+                    return _backoffStep > 0 && DateTime.UtcNow < _backoffUntil;
+            }
+        }
+
+        public int BackoffStep
+        {
+            get
+            {
+                lock (_backoffLock)
+                    return _backoffStep;
+            }
+        }
 
         /// <summary>
         /// ScannerManager itself does not maintain persistent connection state.
@@ -136,6 +159,8 @@ namespace FingerprintAgent.Adapters
         /// </summary>
         public CaptureResult Scan()
         {
+            string cid = AgentLogger.GenerateCorrelationId();
+
             // MockMode: delegate directly to mock
             if (_mockMode)
             {
@@ -157,6 +182,7 @@ namespace FingerprintAgent.Adapters
                     if (retryResult.IsSuccess)
                     {
                         ActiveAdapter = current;
+                        lock (_backoffLock) { _backoffStep = 0; _backoffUntil = DateTime.MinValue; }
                         return retryResult;
                     }
                     _logger?.Warn(null, $"ScannerManager: active adapter retry scan failed: {retryResult.ErrorMessage}");
@@ -197,7 +223,8 @@ namespace FingerprintAgent.Adapters
                                 if (scanResult.IsSuccess)
                                 {
                                     ActiveAdapter = adapter;
-                                    _logger?.Info(null, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
+                                    lock (_backoffLock) { _backoffStep = 0; _backoffUntil = DateTime.MinValue; }
+                                    _logger?.Info(cid, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
                                     return scanResult;
                                 }
                                 else
@@ -221,8 +248,19 @@ namespace FingerprintAgent.Adapters
                     return CaptureResult.Fail("CONFIG_ERROR", "No scanner adapters configured and MockMode is disabled");
             }
 
-            _logger?.Error(null, "ScannerManager: all adapters failed");
+            _logger?.Error(cid, "ScannerManager: all adapters failed");
+            ApplyBackoff(cid);
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "No scanner connected — all adapters failed to initialize or capture");
+        }
+
+        private void ApplyBackoff(string correlationId)
+        {
+            lock (_backoffLock)
+            {
+                _backoffStep = Math.Min(_backoffStep + 1, BackoffDelaysSeconds.Length - 1);
+                _backoffUntil = DateTime.UtcNow.AddSeconds(BackoffDelaysSeconds[_backoffStep]);
+            }
+            _logger?.Info(correlationId, $"ScannerManager: backoff applied step={_backoffStep} for {BackoffDelaysSeconds[_backoffStep]}s");
         }
 
         public void Dispose()
