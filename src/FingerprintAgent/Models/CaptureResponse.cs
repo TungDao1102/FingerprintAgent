@@ -27,5 +27,11 @@ namespace FingerprintAgent.Models
 
         [JsonProperty("errorCode")]
         public string ErrorCode { get; set; }
+
+        [JsonProperty("vendorErrorCode")]
+        public string VendorErrorCode { get; set; }
+
+        [JsonProperty("timestamp")]
+        public string Timestamp { get; set; }
     }
 }
