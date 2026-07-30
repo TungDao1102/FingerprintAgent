@@ -209,10 +209,6 @@ namespace FingerprintAgent.Service
                     var backoffStep = (_scanner as ScannerManager)?.BackoffStep ?? 0;
                     _logger?.Warn(null, $"HealthCheck: scanner not connected (backoff step={backoffStep})");
                 }
-                else
-                {
-                    _logger?.Debug(null, "HealthCheck: scanner connected");
-                }
             }
             catch (Exception ex)
             {
@@ -231,7 +227,10 @@ namespace FingerprintAgent.Service
             }
 
             // Update CORS immediately
-            _httpServer?.UpdateCorsConfig(newConfig.Cors);
+            if (_httpServer != null)
+                _httpServer?.UpdateCorsConfig(newConfig.Cors);
+            else
+                _logger?.Warn(cid, "OnConfigReloaded: _httpServer is null, skipping CORS update");
 
             // D-09: active adapter stays the same, but new priority applies on next failure
             var scannerManager = _scanner as ScannerManager;
