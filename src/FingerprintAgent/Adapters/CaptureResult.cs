@@ -11,6 +11,7 @@ namespace FingerprintAgent.Adapters
         public string DeviceId { get; set; }
         public string VerificationData { get; set; }
         public string ErrorMessage { get; set; }
+        public string ErrorCode { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
 
@@ -25,6 +26,7 @@ namespace FingerprintAgent.Adapters
                 DeviceId = null,
                 VerificationData = null,
                 ErrorMessage = message,
+                ErrorCode = errorCode,
                 Width = 0,
                 Height = 0
             };
