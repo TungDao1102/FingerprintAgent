@@ -304,9 +304,18 @@ namespace FingerprintAgent.Adapters
             _cts?.Dispose();
             if (_adapters != null)
             {
+                IScannerAdapter active;
+                lock (_adapterLock) { active = _activeAdapter; }
                 foreach (var adapter in _adapters)
+                {
+                    // Skip active adapter — dispose it separately below to ensure
+                    // it is cleaned up even if UpdatePriority moved it out of _adapters
+                    if (ReferenceEquals(adapter, active))
+                        continue;
                     (adapter as IDisposable)?.Dispose();
+                }
             }
+            // Dispose active adapter exactly once
             (ActiveAdapter as IDisposable)?.Dispose();
         }
     }
