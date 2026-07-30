@@ -4,6 +4,7 @@
     <RootNamespace>FingerprintAgent.Tests</RootNamespace>
     <AssemblyName>FingerprintAgent.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
+    <PlatformTarget>x86</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
