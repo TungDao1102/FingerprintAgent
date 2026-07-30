@@ -1,7 +1,7 @@
 ---
-phase: "03-resilience-runtime-reconfiguration"
-fixed_at: "2026-07-30T06:50:00Z"
-review_path: ".planning/phases/03-resilience-runtime-reconfiguration/03-REVIEW.md"
+phase: 03-resilience-runtime-reconfiguration
+fixed_at: 2026-07-30T21:30:00Z
+review_path: .planning/phases/03-resilience-runtime-reconfiguration/03-REVIEW.md
 iteration: 1
 findings_in_scope: 6
 fixed: 6
@@ -9,103 +9,62 @@ skipped: 0
 status: all_fixed
 ---
 
-# Phase 03: Code Review Fix Report
+# Phase 3: Resilience & Runtime Reconfiguration — Code Review Fix Report
 
-**Fixed at:** 2026-07-30T06:50:00Z
+**Fixed at:** 2026-07-30T21:30:00Z
 **Source review:** `.planning/phases/03-resilience-runtime-reconfiguration/03-REVIEW.md`
 **Iteration:** 1
+**Fix scope:** Critical + Warning
 
 **Summary:**
-- Findings in scope: 6 (CR-01, WR-01, WR-02, WR-03, WR-04, WR-05)
+- Findings in scope: 6
 - Fixed: 6
 - Skipped: 0
 
 ## Fixed Issues
 
-### CR-01: ScannerManager two-argument constructor leaves `_activeAdapter` null
+### CR-01 (BL-01): Active adapter disposed twice in ScannerManager.Dispose()
 
 **Files modified:** `src/FingerprintAgent/Adapters/ScannerManager.cs`
-**Commit:** `50150f4` — `fixup(03): CR-01 initialize _activeAdapter in ScannerManager two-arg constructor`
-**Applied fix:** Added `_activeAdapter = adapters.Length > 0 ? adapters[0] : null;` at the end of the two-argument `ScannerManager(IScannerAdapter[], AgentLogger)` constructor body. This ensures `_activeAdapter` is never left in a provably-null state after construction, preventing latent `NullReferenceException` bugs if `Scan()` is called before the first successful adapter scan.
+**Commit:** `9606ba0`
+**Applied fix:** Modified `Dispose()` to skip the active adapter in the `_adapters` foreach loop (using `ReferenceEquals` check), then dispose it exactly once after the loop. This prevents double-dispose of native SDK wrappers.
 
----
-
-### WR-01: Lock ordering violates "acquire in same order" convention
+### CR-02 (BL-02): Memory leak — UpdatePriority() abandons old adapter instances without disposal
 
 **Files modified:** `src/FingerprintAgent/Adapters/ScannerManager.cs`
-**Commit:** `50ac9a5` — `fixup(03): WR-01 document lock ordering policy in ScannerManager class doc`
-**Applied fix:** Added a lock ordering policy comment block to the `ScannerManager` class doc comment:
-```csharp
-/// Lock ordering policy (DO-01):
-/// 1. Always acquire _adapterLock before _backoffLock
-/// 2. Never acquire _backoffLock without also holding _adapterLock
-/// 3. UpdatePriority() must NOT be modified to take _backoffLock
-```
-This documents the lock ordering contract to prevent future code changes from introducing deadlock. The pattern `Scan()` acquiring `_adapterLock` then `_backoffLock` is safe only as long as `UpdatePriority()` never takes `_backoffLock`.
+**Commit:** `097ce8e`
+**Applied fix:** Capture the old `_adapters` array before replacement under `_adapterLock`, then dispose all non-active adapters from the old array after exiting the lock. Active adapter is preserved per D-09 design decision.
 
----
-
-### WR-02: OnConfigReloaded silently skips when `_httpServer` is null
+### WR-01: Race condition — health check callback may access disposed scanner during shutdown
 
 **Files modified:** `src/FingerprintAgent/Service/FingerprintAgentService.cs`
-**Commit:** `e014eb3` — `fixup(03): WR-02 add warning log when _httpServer is null in OnConfigReloaded`
-**Applied fix:** Replaced the silent null-conditional `_httpServer?.UpdateCorsConfig(...)` with an explicit null-check and warning log:
-```csharp
-if (_httpServer != null)
-    _httpServer?.UpdateCorsConfig(newConfig.Cors);
-else
-    _logger?.Warn(cid, "OnConfigReloaded: _httpServer is null, skipping CORS update");
-```
+**Commit:** `ef23aee`
+**Applied fix:** Moved `_healthCheckTimer?.Dispose()` from before `_scanner` disposal to after it, ensuring any thread-pool-queued health check callback that runs concurrently will find the scanner still alive.
 
----
+### WR-02: Dead code — ConfigFileWatcher reads file into unused `json` variable
 
-### WR-03: HealthCheckCallback only logs when disconnected
+**Files modified:** `src/FingerprintAgent/Configuration/ConfigFileWatcher.cs`
+**Commit:** `45c1ca1`
+**Applied fix:** Removed the dead `FileStream` + `StreamReader` read block from `OnDebounceElapsed`. The `json` variable was never used after the `using` block. Config is loaded via `ConfigLoader.LoadFromDirectory()` on the next line.
 
-**Files modified:** `src/FingerprintAgent/Service/FingerprintAgentService.cs`
-**Commit:** `315bbe6` — `fixup(03): WR-03 add connected heartbeat log in HealthCheckCallback`
-**Applied fix:** Added an `else` branch in `HealthCheckCallback` to emit a debug-level heartbeat log when the scanner is connected:
-```csharp
-else
-{
-    _logger?.Debug(null, "HealthCheck: scanner connected");
-}
-```
-This enables operational distinction between "scanner connected" and "callback not firing."
-
----
-
-### WR-04: UpdatePriority() creates new adapters but never disposes old ones
+### WR-03: `_adapters` read in Scan() without lock, inconsistent with documented lock ordering policy
 
 **Files modified:** `src/FingerprintAgent/Adapters/ScannerManager.cs`
-**Commit:** `21b9804` — `fixup(03): WR-04 document adapter disposal trade-off in UpdatePriority`
-**Applied fix:** Added a note to the `UpdatePriority()` doc comment:
-```csharp
-/// Note: old adapters are NOT disposed here because _activeAdapter might reference
-/// one of them. This is an intentional trade-off (D-09). Dispose is called only
-/// when ScannerManager.Dispose() is called at service shutdown.
-```
-This documents the resource-leak trade-off as an intentional design decision rather than an oversight, making it clear to future maintainers that disposal is deferred to service shutdown.
+**Commit:** `250a843`
+**Applied fix:** Added a lock-copied local before the foreach loop in `Scan()` to ensure `_adapters` is read consistently under `_adapterLock`, matching the documented lock discipline.
+
+### WR-04: Test `BackoffStep_ResetsOnSuccessfulCapture` does not actually test backoff reset
+
+**Files modified:** `tests/FingerprintAgent.Tests/ScannerManagerTests.ExponentialBackoff.cs`
+**Commit:** `a808f51`
+**Applied fix:** Renamed test method from `BackoffStep_ResetsOnSuccessfulCapture` to `BackoffStep_NotAffected_WhenCapturesAlwaysSucceed` to accurately reflect what the test exercises.
+
+## Skipped Issues
+
+None — all 6 findings in scope were successfully fixed.
 
 ---
 
-### WR-05: OnStop() bare `catch {}` — pre-existing anti-pattern
-
-**Files modified:** `src/FingerprintAgent/Service/FingerprintAgentService.cs`
-**Commit:** `bbd5a43` — `fixup(03): WR-05 replace bare catch in OnStop with debug log`
-**Applied fix:** Replaced the bare `catch { }` with a debug log to surface disposal exceptions:
-```csharp
-catch (Exception ex) { _logger?.Debug(null, $"healthCheckTimer disposal threw: {ex.Message}"); }
-```
-
----
-
-## Build & Test Results
-
-- **Build:** `dotnet build FingerprintAgent.sln -c Release` — 0 errors, 0 new warnings (2 pre-existing xUnit1031 warnings in test code)
-- **Tests:** `dotnet test FingerprintAgent.sln` — 49 passed, 0 failed
-
----
-
-_Fixed: 2026-07-30_
+_Fixed: 2026-07-30T21:30:00Z_
 _Fixer: the agent (gsd-code-fixer)_
 _Iteration: 1_
