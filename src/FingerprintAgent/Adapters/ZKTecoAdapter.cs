@@ -107,72 +107,54 @@ namespace FingerprintAgent.Adapters
             if (_device == null || !_isConnected)
             {
                 _vendorErrorCode = "SCANNER_NOT_CONNECTED";
-                return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "ZKTeco: not initialized");
+                return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "ZKTeco: scanner not initialized");
             }
 
-            // Safety-net 5s timeout inside the adapter — real budget (10s total, ~3s per
-            // adapter) is enforced by ScannerManager per D-06 and D-11.
-            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+            try
             {
-                try
+                var captureResult = _device.AcquireFingerprintAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+                if (!captureResult.IsSuccess)
                 {
-                    // AcquireFingerprintAsync wraps the blocking native call in Task.Run.
-                    // GetAwaiter().GetResult() avoids the AggregateException wrapping of .Result
-                    // and reduces deadlock risk in SynchronizationContext-bound hosts.
-                    var captureResult = _device.AcquireFingerprintAsync(cts.Token).GetAwaiter().GetResult();
-
-                    if (!captureResult.IsSuccess)
-                    {
-                        _vendorErrorCode = ZkResponseToString(captureResult.Response);
-                        return CaptureResult.Fail("CAPTURE_FAILED",
-                            $"ZKTeco: capture failed ({ZkResponseToString(captureResult.Response)})");
-                    }
-
-                    // ZkFingerPrintResult.Bitmap is already BMP bytes from BitmapFormat.GetBitmap().
-                    // Convert BMP -> PNG via GDI+. NO pixel inversion — ZKTeco grayscale is
-                    // conventional (0=white, 255=dark ridges) per D-10.
-                    byte[] pngBytes;
-                    byte[] bmpBytes = captureResult.Value!.Bitmap;
-                    using (var ms = new MemoryStream(bmpBytes))
-                    using (var bmp = new Bitmap(ms))
-                    using (var outMs = new MemoryStream())
-                    {
-                        bmp.Save(outMs, ImageFormat.Png);
-                        pngBytes = outMs.ToArray();
-                    }
-
-                    // SHA-256 verification data
-                    string verificationData;
-                    using (var sha256 = SHA256.Create())
-                    {
-                        byte[] hash = sha256.ComputeHash(pngBytes);
-                        verificationData = Convert.ToBase64String(hash);
-                    }
-
-                    return new CaptureResult
-                    {
-                        IsSuccess = true,
-                        ImageBytes = pngBytes,
-                        MimeType = "image/png",
-                        CapturedAt = DateTime.UtcNow.ToString("O"),
-                        DeviceId = _deviceId,
-                        VerificationData = verificationData,
-                        ErrorMessage = null,
-                        Width = _width,
-                        Height = _height
-                    };
+                    _vendorErrorCode = ZkResponseToString(captureResult.Response);
+                    return CaptureResult.Fail("CAPTURE_FAILED",
+                        $"ZKTeco: capture failed ({ZkResponseToString(captureResult.Response)})");
                 }
-                catch (OperationCanceledException)
+
+                byte[] pngBytes;
+                byte[] bmpBytes = captureResult.Value!.Bitmap;
+                using (var ms = new MemoryStream(bmpBytes))
+                using (var bmp = new Bitmap(ms))
+                using (var outMs = new MemoryStream())
                 {
-                    _vendorErrorCode = "CAPTURE_TIMEOUT";
-                    return CaptureResult.Fail("CAPTURE_TIMEOUT",
-                        "ZKTeco: capture timeout — no finger detected within safety-net deadline");
+                    bmp.Save(outMs, ImageFormat.Png);
+                    pngBytes = outMs.ToArray();
                 }
-                catch (Exception ex)
+
+                string verificationData;
+                using (var sha256 = SHA256.Create())
                 {
-                    _vendorErrorCode = ex.Message;
-                    return CaptureResult.Fail("CAPTURE_FAILED", $"ZKTeco: {ex.Message}");
+                    byte[] hash = sha256.ComputeHash(pngBytes);
+                    verificationData = Convert.ToBase64String(hash);
                 }
+
+                return new CaptureResult
+                {
+                    IsSuccess = true,
+                    ImageBytes = pngBytes,
+                    MimeType = "image/png",
+                    CapturedAt = DateTime.UtcNow.ToString("O"),
+                    DeviceId = _deviceId,
+                    VerificationData = verificationData,
+                    ErrorMessage = null,
+                    Width = _width,
+                    Height = _height
+                };
+            }
+            catch (Exception ex)
+            {
+                _vendorErrorCode = ex.Message;
+                return CaptureResult.Fail("CAPTURE_FAILED", $"ZKTeco: {ex.Message}");
             }
         }
 

@@ -156,6 +156,7 @@ namespace FingerprintAgent.Adapters
                     var retryResult = current.Scan();
                     if (retryResult.IsSuccess)
                     {
+                        ActiveAdapter = current;
                         return retryResult;
                     }
                     _logger?.Warn(null, $"ScannerManager: active adapter retry scan failed: {retryResult.ErrorMessage}");
@@ -192,16 +193,16 @@ namespace FingerprintAgent.Adapters
 
                             if (adapter.Initialize())
                             {
-                                var result = adapter.Scan();
-                                if (result.IsSuccess)
+                                var scanResult = adapter.Scan();
+                                if (scanResult.IsSuccess)
                                 {
                                     ActiveAdapter = adapter;
                                     _logger?.Info(null, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
-                                    return result;
+                                    return scanResult;
                                 }
                                 else
                                 {
-                                    _logger?.Warn(null, $"ScannerManager: {adapter.GetType().Name} scan failed: {result.ErrorMessage}");
+                                    _logger?.Warn(null, $"ScannerManager: {adapter.GetType().Name} scan failed: {scanResult.ErrorMessage}");
                                 }
                             }
                             else

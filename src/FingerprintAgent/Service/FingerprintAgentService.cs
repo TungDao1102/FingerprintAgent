@@ -7,6 +7,7 @@ using FingerprintAgent.Adapters;
 using FingerprintAgent.Api;
 using FingerprintAgent.Configuration;
 using FingerprintAgent.Logging;
+using ZkTecoFingerPrint;
 
 namespace FingerprintAgent.Service
 {
@@ -109,6 +110,11 @@ namespace FingerprintAgent.Service
                 shutdownError = ex;
                 _logger?.Error(stopCid, $"Error disposing scanner: {ex.Message}");
             }
+
+            // ZkTecoFingerHost.Close() is safe to call once — static teardown for all ZKTeco sessions.
+            // Called after adapter disposal since ZKTecoAdapter.Dispose() deliberately skips it
+            // (multi-instance pattern: individual adapter must not close the shared host).
+            try { ZkTecoFingerHost.Close(); } catch { /* best-effort */ }
 
             if (shutdownError != null)
             {
