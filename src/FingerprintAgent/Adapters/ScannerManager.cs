@@ -21,7 +21,7 @@ namespace FingerprintAgent.Adapters
     public class ScannerManager : IScannerAdapter, IDisposable
     {
         private bool _disposed;
-        private readonly IScannerAdapter[] _adapters;
+        private IScannerAdapter[] _adapters;
         private readonly AgentLogger _logger;
         private readonly ScannerConfig _config;
         private readonly CancellationTokenSource _cts;
@@ -127,6 +127,32 @@ namespace FingerprintAgent.Adapters
             _logger = logger;
             _mockMode = false;
             _cts = new CancellationTokenSource();
+        }
+
+        /// <summary>
+        /// Re-creates the adapter list from newPriority at runtime.
+        /// D-09: active adapter is NOT touched — stays as-is across priority changes.
+        /// Backoff state is also preserved (not reset) on priority change.
+        /// Unknown vendor names throw InvalidOperationException (fail-fast, consistent with constructor).
+        /// Thread-safe.
+        /// </summary>
+        public void UpdatePriority(string[] newPriority)
+        {
+            if (newPriority == null || newPriority.Length == 0)
+                return;
+
+            lock (_adapterLock)
+            {
+                var vendorList = new List<IScannerAdapter>();
+                foreach (var vendorName in newPriority)
+                {
+                    IScannerAdapter adapter = CreateAdapter(vendorName);
+                    vendorList.Add(adapter);
+                }
+                _adapters = vendorList.ToArray();
+            }
+
+            _logger?.Info(null, $"ScannerManager: priority updated, new order=[{string.Join(", ", newPriority)}]");
         }
 
         private static IScannerAdapter CreateAdapter(string vendorName)
