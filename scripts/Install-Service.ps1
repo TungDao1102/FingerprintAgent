@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 if ([string]::IsNullOrWhiteSpace($BinPath)) {
     $base = if ($PSScriptRoot) { $PSScriptRoot } else { $PWD.Path }
-    $BinPath = Join-Path $base "..\src\FingerprintAgent\bin\Release\net48\FingerprintAgent.exe"
+    $BinPath = Join-Path $base "..\src\FingerprintAgent.Host\bin\Release\net48\FingerprintAgent.exe"
 }
 
 function Test-Admin {
