@@ -5,12 +5,14 @@ using Xunit;
 namespace FingerprintAgent.Tests
 {
     /// <summary>
-    /// Raw ZK SDK probe — bypasses the ZkTecoFingerPrint NuGet wrapper entirely.
-    /// Calls libzkfp.dll directly (same pattern as vendor demo Form1.cs).
+    /// Raw ZK SDK probe — calls libzkfp.dll directly (same pattern as vendor demo Form1.cs).
+    /// Bypasses the ZkTecoFingerPrint NuGet wrapper so failures can be attributed to either
+    /// (a) SDK/USB state, (b) the service holding the device, or (c) a wrapper quirk.
     ///
-    /// Purpose: isolate whether test failures come from (a) SDK/USB state, (b) service
-    /// holding the device, or (c) wrapper bugs. Also reproduces the original parameter-106
-    /// bug that caused the wrapper to fail without the device being touched.
+    /// Also documents that parameter 106 returns ERROR_CAPTURE on ZK9500 firmware — this
+    /// is the SDK behavior that the ZkTecoFingerPrint wrapper's parameterless
+    /// AcquireFingerprintAsync overload trips on. The wrapper's buffer-overload
+    /// (AcquireFingerprintAsync(byte[], CancellationToken)) skips that query.
     ///
     /// Run with verbose output:
     ///   dotnet test --filter "FullyQualifiedName~ZkSdkProbe_Run" --logger "console;verbosity=detailed"
@@ -87,7 +89,10 @@ namespace FingerprintAgent.Tests
             int param106 = ZKFPM_GetParameters(h, 106, paramBuf, ref paramSize);
             int w = (param106 == 0 && paramSize >= 4) ? BitConverter.ToInt32(paramBuf, 0) : 0;
             Console.WriteLine($"[4] ZKFPM_GetParameters(code=106) = {param106}, paramSize={paramSize}, value={w}");
-            Console.WriteLine($"    EXPECTED: -8 (ERROR_CAPTURE) on ZK9500 — this is the WRAPPER BUG");
+            Console.WriteLine($"    EXPECTED on ZK9500: -8 (ERROR_CAPTURE). The ZkTecoFingerPrint wrapper's");
+            Console.WriteLine($"    parameterless AcquireFingerprintAsync overload queries this parameter;");
+            Console.WriteLine($"    on ZK9500 it fails immediately. Use the buffer-overload of AcquireFingerprintAsync");
+            Console.WriteLine($"    instead — see ZKTecoAdapter for the correct invocation.");
 
             paramSize = paramBuf.Length;
             int param1 = ZKFPM_GetParameters(h, 1, paramBuf, ref paramSize);
