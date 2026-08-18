@@ -47,13 +47,11 @@ namespace FingerprintAgent.Tests
         [Fact]
         public void ZKTecoAdapter_Scan_ReturnsFail_WhenNotInitialized()
         {
-            // Calling Scan() before Initialize() should return a failure CaptureResult
             var adapter = new ZKTecoAdapter();
             CaptureResult result = adapter.Scan();
 
             Assert.False(result.IsSuccess, "Scan() should return failure when adapter is not initialized");
-            // ErrorMessage is the second arg to CaptureResult.Fail: "ZKTeco: not initialized"
-            Assert.Equal("ZKTeco: not initialized", result.ErrorMessage);
+            Assert.Equal("ZKTeco: scanner not initialized", result.ErrorMessage);
         }
 
         [Fact]

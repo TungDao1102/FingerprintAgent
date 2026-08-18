@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace FingerprintAgent.Adapters
 {
@@ -30,8 +31,14 @@ namespace FingerprintAgent.Adapters
         /// </summary>
         public virtual bool ProbeConnection() => IsConnected;
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _lastError = "CANCELLED";
+                return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture cancelled before start");
+            }
+
             byte[] raw;
             try
             {

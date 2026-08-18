@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
 using ZkTecoFingerPrint;
@@ -43,24 +44,37 @@ namespace FingerprintAgent.Adapters
         private string _vendorErrorCode = "NONE";
         private bool _isConnected;
 
-        // Maps ZkResponse enum values to human-readable strings matching ZKFP_ERR_* constants
-        private static readonly string[] _zkResponseStrings = new string[]
+        // Maps ZkResponse enum values to human-readable strings matching ZKFP_ERR_* constants.
+        // Dictionary lookup handles gaps in the enum (-15, -16, -19, -21 are not defined).
+        private static readonly System.Collections.Generic.Dictionary<int, string> _zkResponseStrings =
+            new System.Collections.Generic.Dictionary<int, string>
         {
-            "ERROR_NONE",              //  0  Ok
-            "ERROR_INITLIB",           // -1  InitLibrary
-            "ERROR_INIT",              // -2  Init
-            "ERROR_NO_DEVICE",         // -3  NoDevice
-            "ERROR_NOT_SUPPORT",       // -4  NotSupported
-            "ERROR_INVALID_PARAM",     // -5  InvalidParameter
-            "ERROR_OPEN",              // -6  Open
-            "ERROR_INVALID_HANDLE",    // -7  InvalidHandle
-            "ERROR_CAPTURE",           // -8  Capture
-            "ERROR_EXTRACT_FP",        // -9  ExtractFingerPrint
-            "ERROR_ABORT",             // -10 Abort
-            "ERROR_MEMORY_NOT_ENOUGH", // -11 NotEnoughMemory
-            "ERROR_BUSY"               // -12 Busy
-            // Note: enum values beyond -12 exist (AddFinger=-13, DeleteFinger=-14, etc.)
-            // but are not covered by the classic ZKFP_ERR_* 0/-1 to -12 range.
+            [(int)ZkResponse.Ok]                = "ERROR_NONE",
+            [(int)ZkResponse.AlreadyInit]       = "ERROR_ALREADY_INIT",
+            [(int)ZkResponse.InitLibrary]       = "ERROR_INITLIB",
+            [(int)ZkResponse.Init]              = "ERROR_INIT",
+            [(int)ZkResponse.NoDevice]          = "ERROR_NO_DEVICE",
+            [(int)ZkResponse.NotSupported]      = "ERROR_NOT_SUPPORT",
+            [(int)ZkResponse.InvalidParameter]  = "ERROR_INVALID_PARAM",
+            [(int)ZkResponse.Open]              = "ERROR_OPEN",
+            [(int)ZkResponse.InvalidHandle]     = "ERROR_INVALID_HANDLE",
+            [(int)ZkResponse.Capture]           = "ERROR_CAPTURE",
+            [(int)ZkResponse.ExtractFingerPrint]= "ERROR_EXTRACT_FP",
+            [(int)ZkResponse.Abort]             = "ERROR_ABORT",
+            [(int)ZkResponse.NotEnoughMemory]   = "ERROR_MEMORY_NOT_ENOUGH",
+            [(int)ZkResponse.Busy]              = "ERROR_BUSY",
+            [(int)ZkResponse.AddFinger]         = "ERROR_ADD_FINGER",
+            [(int)ZkResponse.DeleteFinger]      = "ERROR_DELETE_FINGER",
+            [(int)ZkResponse.Fail]              = "ERROR_FAIL",
+            [(int)ZkResponse.Cancel]            = "ERROR_CANCEL",
+            [(int)ZkResponse.VerifyFingerPrint] = "ERROR_VERIFY_FP",
+            [(int)ZkResponse.Merge]             = "ERROR_MERGE",
+            [(int)ZkResponse.NotOpened]         = "ERROR_NOT_OPENED",
+            [(int)ZkResponse.NotInit]           = "ERROR_NOT_INIT",
+            [(int)ZkResponse.AlreadyOpened]     = "ERROR_ALREADY_OPENED",
+            [(int)ZkResponse.LoadImage]         = "ERROR_LOAD_IMAGE",
+            [(int)ZkResponse.AnalyzeImage]      = "ERROR_ANALYZE_IMAGE",
+            [(int)ZkResponse.Timeout]           = "ERROR_TIMEOUT"
         };
 
         public bool IsConnected => _isConnected && _device != null;
@@ -123,15 +137,23 @@ namespace FingerprintAgent.Adapters
             }
 
             // SCAN-10 quirk: GetDeviceCount() may return 0 immediately after Init()
-            // on some driver versions — retry up to 3 times with 100ms delay
+            // on some driver versions — retry up to 3 times with 100ms delay.
             int deviceCount = 0;
-            for (int attempt = 0; attempt < 3; attempt++)
+            try
             {
-                deviceCount = ZkTecoFingerHost.GetDeviceCount();
-                if (deviceCount > 0)
-                    break;
-                if (attempt < 2)
-                    Thread.Sleep(100);
+                for (int attempt = 0; attempt < 3; attempt++)
+                {
+                    deviceCount = ZkTecoFingerHost.GetDeviceCount();
+                    if (deviceCount > 0)
+                        break;
+                    if (attempt < 2)
+                        Thread.Sleep(100);
+                }
+            }
+            catch (Exception ex)
+            {
+                _vendorErrorCode = $"{ex.GetType().Name}: {ex.Message}";
+                return false;
             }
 
             if (deviceCount == 0)
@@ -160,7 +182,7 @@ namespace FingerprintAgent.Adapters
             return true;
         }
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             // Snapshot device handle under lock so ProbeConnection's Close+Initialize
             // (also under lock) can't dispose the handle mid-capture. Long
@@ -178,6 +200,12 @@ namespace FingerprintAgent.Adapters
                 device = _device;
                 width = _width;
                 height = _height;
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _vendorErrorCode = "CANCELLED";
+                return CaptureResult.Fail("CAPTURE_TIMEOUT", "ZKTeco: capture cancelled before start");
             }
 
             try
@@ -198,7 +226,13 @@ namespace FingerprintAgent.Adapters
 
                 do
                 {
-                    lastResult = device.AcquireFingerprintAsync(imageBuffer, CancellationToken.None)
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        _vendorErrorCode = "CANCELLED";
+                        return CaptureResult.Fail("CAPTURE_TIMEOUT", "ZKTeco: capture cancelled by timeout");
+                    }
+
+                    lastResult = device.AcquireFingerprintAsync(imageBuffer, cancellationToken)
                         .GetAwaiter().GetResult();
                     if (lastResult.IsSuccess)
                         break;
@@ -208,21 +242,12 @@ namespace FingerprintAgent.Adapters
                 if (lastResult == null || !lastResult.IsSuccess)
                 {
                     int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
-                    _vendorErrorCode = ZkResponseToString(lastResult?.Response ?? ZkResponse.Capture);
-                    return CaptureResult.Fail("CAPTURE_FAILED",
-                        $"ZKTeco: no finger detected within {elapsedSec}s");
+                    ZkResponse failedResponse = lastResult?.Response ?? ZkResponse.Capture;
+                    _vendorErrorCode = ZkResponseToString(failedResponse);
+                    return CaptureResult.Fail("CAPTURE_FAILED", ZkResponseToUserMessage(failedResponse, elapsedSec));
                 }
 
-                var captureResult = lastResult.Value!;
-
-                byte[] pngBytes;
-                using (var ms = new MemoryStream(captureResult.Bitmap))
-                using (var bmp = new Bitmap(ms))
-                using (var pngStream = new MemoryStream())
-                {
-                    bmp.Save(pngStream, ImageFormat.Png);
-                    pngBytes = pngStream.ToArray();
-                }
+                byte[] pngBytes = ToPngGrayscale(imageBuffer, width, height);
 
                 string verificationData;
                 using (var sha256 = SHA256.Create())
@@ -246,26 +271,83 @@ namespace FingerprintAgent.Adapters
             }
             catch (Exception ex)
             {
-                _vendorErrorCode = ex.Message;
-                return CaptureResult.Fail("CAPTURE_FAILED", $"ZKTeco: {ex.Message}");
+                _vendorErrorCode = $"{ex.GetType().Name}: {ex.Message}";
+                return CaptureResult.Fail("CAPTURE_FAILED",
+                    $"ZKTeco: capture failed ({ex.GetType().Name}) — please retry");
+            }
+        }
+
+        private static byte[] ToPngGrayscale(byte[] rawPixels, int width, int height)
+        {
+            using (var bitmap = new Bitmap(width, height, PixelFormat.Format8bppIndexed))
+            {
+                ColorPalette palette = bitmap.Palette;
+                for (int i = 0; i < 256; i++)
+                    palette.Entries[i] = Color.FromArgb(i, i, i);
+                bitmap.Palette = palette;
+
+                var bitmapData = bitmap.LockBits(
+                    new Rectangle(0, 0, width, height),
+                    ImageLockMode.WriteOnly,
+                    PixelFormat.Format8bppIndexed);
+
+                int stride = bitmapData.Stride;
+                for (int row = 0; row < height; row++)
+                {
+                    Marshal.Copy(rawPixels, row * width, bitmapData.Scan0 + row * stride, width);
+                }
+                bitmap.UnlockBits(bitmapData);
+
+                using (var pngStream = new MemoryStream())
+                {
+                    bitmap.Save(pngStream, ImageFormat.Png);
+                    return pngStream.ToArray();
+                }
             }
         }
 
         /// <summary>
-        /// Converts a ZkResponse enum value to a human-readable string.
-        /// ZkResponse values are negative integers matching ZKFP_ERR_* from zkfp2.h.
-        /// Value 0 (Ok) maps to "ERROR_NONE" for consistency with other adapters.
+        /// Converts a ZkResponse enum value to a human-readable string for VendorErrorCode.
         /// </summary>
         private static string ZkResponseToString(ZkResponse response)
         {
-            int index = (int)response;
-            if (index == 0)
-                return "ERROR_NONE"; // Ok
-            int arrayIndex = Math.Abs(index);
-            if (arrayIndex < _zkResponseStrings.Length)
-                return _zkResponseStrings[arrayIndex];
-            // For enum values beyond our coverage, return raw enum name
-            return response.ToString();
+            int key = (int)response;
+            return _zkResponseStrings.TryGetValue(key, out string value)
+                ? value
+                : $"ERROR_UNKNOWN_{key}";
+        }
+
+        /// <summary>
+        /// Maps ZkResponse to a user-actionable error message for CaptureResult.ErrorMessage.
+        /// Vendor-specific error string (ZkResponseToString) stays in VendorErrorCode.
+        /// </summary>
+        private static string ZkResponseToUserMessage(ZkResponse response, int elapsedSec)
+        {
+            switch (response)
+            {
+                case ZkResponse.Capture:
+                    return $"ZKTeco: no finger detected within {elapsedSec}s — please place finger on sensor and try again";
+                case ZkResponse.Busy:
+                    return "ZKTeco: scanner is busy with another operation — please retry in a moment";
+                case ZkResponse.Abort:
+                    return "ZKTeco: capture aborted by sensor or driver";
+                case ZkResponse.Timeout:
+                    return $"ZKTeco: capture timed out after {elapsedSec}s — please retry";
+                case ZkResponse.InvalidHandle:
+                    return "ZKTeco: device handle invalidated — please retry, scanner will reinitialize";
+                case ZkResponse.NoDevice:
+                    return "ZKTeco: no scanner detected — check USB connection";
+                case ZkResponse.NotOpened:
+                    return "ZKTeco: scanner not opened — reinitializing, please retry";
+                case ZkResponse.InvalidParameter:
+                    return "ZKTeco: invalid parameter passed to SDK — please report to IT support";
+                case ZkResponse.Cancel:
+                    return "ZKTeco: capture cancelled";
+                case ZkResponse.NotEnoughMemory:
+                    return "ZKTeco: scanner memory insufficient — please retry";
+                default:
+                    return $"ZKTeco: capture failed ({ZkResponseToString(response)})";
+            }
         }
 
         /// <summary>
