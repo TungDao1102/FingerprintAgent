@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Text;
 using System.Threading;
@@ -19,6 +20,8 @@ namespace FingerprintAgent.Api
         private readonly AgentLogger _logger;
         private CancellationTokenSource _cts;
         private Task _workerTask;
+        private readonly List<Task> _inFlightRequests = new List<Task>();
+        private readonly object _inFlightLock = new object();
         private bool _disposed;
 
         public HttpServer(AgentConfig config, IScannerAdapter scanner, AgentLogger logger = null)
@@ -77,16 +80,21 @@ namespace FingerprintAgent.Api
                 }
                 catch (ObjectDisposedException) { }
 
-                // Graceful drain: wait up to 30 seconds for in-flight HandleRequest
-                // fire-and-forget tasks to complete before force-terminating.
-                // This gives clients a chance to receive a proper response instead of
-                // a connection-reset TCP error.
                 try
                 {
-                    _workerTask?.Wait(TimeSpan.FromSeconds(30));
+                    _workerTask?.Wait(TimeSpan.FromSeconds(5));
                 }
-                catch (AggregateException)
+                catch (AggregateException) { }
+
+                Task[] inFlight;
+                lock (_inFlightLock) { inFlight = _inFlightRequests.ToArray(); }
+                if (inFlight.Length > 0)
                 {
+                    try
+                    {
+                        Task.WaitAll(inFlight, TimeSpan.FromSeconds(30));
+                    }
+                    catch (AggregateException) { }
                 }
 
                 _listener.Close();
@@ -102,11 +110,15 @@ namespace FingerprintAgent.Api
                     var context = await _listener.GetContextAsync();
 #pragma warning disable CS4014
                     var handlerTask = Task.Run(() => HandleRequest(context), ct);
-                    handlerTask.ContinueWith(t => {
-                        if (t.IsFaulted) {
+                    lock (_inFlightLock) _inFlightRequests.Add(handlerTask);
+                    handlerTask.ContinueWith(t =>
+                    {
+                        lock (_inFlightLock) _inFlightRequests.Remove(t);
+                        if (t.IsFaulted)
+                        {
                             _logger?.Error(AgentLogger.GenerateCorrelationId(), $"Unhandled request error: {t.Exception}");
                         }
-                    }, TaskContinuationOptions.OnlyOnFaulted);
+                    }, TaskScheduler.Default);
 #pragma warning restore CS4014
                 }
                 catch (ObjectDisposedException)
