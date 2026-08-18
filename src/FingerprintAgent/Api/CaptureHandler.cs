@@ -73,11 +73,11 @@ namespace FingerprintAgent.Api
                 }
 
                 CaptureResult result = scanner.Scan();
+                var vendorErrorCode = scanner.VendorErrorCode;
 
                 if (!result.IsSuccess)
                 {
                     var (statusCode, errorCode) = MapErrorCode(result.ErrorCode);
-                    var vendorErrorCode = scanner.VendorErrorCode;
                     var timestamp = DateTime.UtcNow.ToString("O");
 
                     _logger?.Error(correlationId, $"Capture failed — {errorCode}: {result.ErrorMessage}");
