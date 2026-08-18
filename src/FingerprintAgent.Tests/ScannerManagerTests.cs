@@ -382,6 +382,7 @@ namespace FingerprintAgent.Tests
             var adapter = new Mock<IScannerAdapter>();
             adapter.Setup(a => a.Initialize()).Returns(true);
             adapter.Setup(a => a.IsConnected).Returns(true);
+            adapter.Setup(a => a.ProbeConnection()).Returns(true);
             adapter.Setup(a => a.DeviceId).Returns("cached-dev");
             adapter.Setup(a => a.Model).Returns("Cached Model");
             adapter.Setup(a => a.VendorErrorCode).Returns("NONE");
@@ -407,6 +408,7 @@ namespace FingerprintAgent.Tests
             var adapter = new Mock<IScannerAdapter>();
             adapter.Setup(a => a.Initialize()).Returns(true);
             adapter.Setup(a => a.IsConnected).Returns(() => isConnected);
+            adapter.Setup(a => a.ProbeConnection()).Returns(() => isConnected);
             adapter.Setup(a => a.DeviceId).Returns("dev");
             adapter.Setup(a => a.Model).Returns("M");
             adapter.Setup(a => a.VendorErrorCode).Returns("NONE");
@@ -421,6 +423,36 @@ namespace FingerprintAgent.Tests
 
             sm.TryProbe(out d, out m, out v);
             adapter.Verify(a => a.Initialize(), Times.Exactly(2));
+        }
+
+        [Fact]
+        public void TryProbe_DetectsDeviceUnplugged_ViaProbeConnection()
+        {
+            bool deviceAttached = true;
+            int initCallCount = 0;
+            var adapter = new Mock<IScannerAdapter>();
+            adapter.Setup(a => a.Initialize()).Returns(() =>
+            {
+                initCallCount++;
+                return deviceAttached;
+            });
+            adapter.Setup(a => a.IsConnected).Returns(() => deviceAttached);
+            adapter.Setup(a => a.ProbeConnection()).Returns(() => deviceAttached);
+            adapter.Setup(a => a.DeviceId).Returns("zk9500");
+            adapter.Setup(a => a.Model).Returns("ZK9500");
+            adapter.Setup(a => a.VendorErrorCode).Returns(() => deviceAttached ? "NONE" : "ERROR_NO_DEVICE");
+
+            var sm = new ScannerManager(new[] { adapter.Object }, logger: null);
+
+            string d, m, v;
+            Assert.True(sm.TryProbe(out d, out m, out v));
+            Assert.Equal("zk9500", d);
+            Assert.Equal(1, initCallCount);
+
+            deviceAttached = false;
+
+            Assert.False(sm.TryProbe(out d, out m, out v));
+            Assert.Equal(2, initCallCount);
         }
 
         [Fact]

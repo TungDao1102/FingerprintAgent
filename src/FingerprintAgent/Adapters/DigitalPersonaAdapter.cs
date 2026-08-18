@@ -46,6 +46,8 @@ namespace FingerprintAgent.Adapters
 
         public string VendorErrorCode => _vendorErrorCode ?? "NONE";
 
+        public bool ProbeConnection() => IsConnected;
+
         public bool Initialize()
         {
             try
@@ -246,6 +248,8 @@ namespace FingerprintAgent.Adapters
         {
             return false;
         }
+
+        public bool ProbeConnection() => IsConnected;
 
         public CaptureResult Scan()
         {

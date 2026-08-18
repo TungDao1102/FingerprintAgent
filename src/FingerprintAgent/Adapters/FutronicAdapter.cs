@@ -36,6 +36,8 @@ namespace FingerprintAgent.Adapters
 
         public string VendorErrorCode => _vendorErrorCode ?? "NONE";
 
+        public bool ProbeConnection() => IsConnected;
+
         public bool Initialize()
         {
             _vendorErrorCode = "NONE";
@@ -283,6 +285,8 @@ namespace FingerprintAgent.Adapters
         public string Model => "Futronic (stub)";
         public string MimeType => "image/png";
         public string VendorErrorCode => "NONE";
+
+        public bool ProbeConnection() => IsConnected;
 
         public bool Initialize()
         {

@@ -23,6 +23,13 @@ namespace FingerprintAgent.Adapters
 
         public bool Initialize() => InitializeDevice();
 
+        /// <summary>
+        /// Default probe: trusts the cached IsConnected flag. Adapters with a native
+        /// lightweight "query device count" SDK call (e.g. ZKTeco) should override
+        /// this with a real re-verification.
+        /// </summary>
+        public virtual bool ProbeConnection() => IsConnected;
+
         public CaptureResult Scan()
         {
             byte[] raw;

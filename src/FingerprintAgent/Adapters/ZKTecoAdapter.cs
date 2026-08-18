@@ -73,6 +73,28 @@ namespace FingerprintAgent.Adapters
 
         public string VendorErrorCode => _vendorErrorCode ?? "NONE";
 
+        /// <summary>
+        /// Lightweight real-time connection check. Re-queries ZkTecoFingerHost.GetDeviceCount()
+        /// to verify the device is still attached without full re-initialization. Takes ~1ms
+        /// (no device open/close). Updates _isConnected to false if the device was unplugged
+        /// since the last Initialize(). Without this, /health would report stale "healthy"
+        /// state until the next /api/capture triggered a full re-init.
+        /// </summary>
+        public bool ProbeConnection()
+        {
+            if (_device == null)
+                return false;
+
+            int count = ZkTecoFingerHost.GetDeviceCount();
+            if (count <= 0)
+            {
+                _isConnected = false;
+                _vendorErrorCode = ZkResponseToString(ZkResponse.NoDevice);
+                return false;
+            }
+            return _isConnected;
+        }
+
         public bool Initialize()
         {
             // Dispose prior device — SDK sensor state corrupts after each capture,

@@ -14,6 +14,7 @@ namespace FingerprintAgent.Tests
     {
         public bool IsConnectedValue { get; set; } = true;
         public bool InitializeResult { get; set; } = true;
+        public bool ProbeConnectionResult { get; set; } = true;
         public CaptureResult ScanResult { get; set; } = CaptureResult.Ok(new byte[] { 1, 2, 3 });
         public string VendorErrorCodeValue { get; set; } = "MOCK";
         public string DeviceIdValue { get; set; } = "mock-test-device";
@@ -26,6 +27,8 @@ namespace FingerprintAgent.Tests
         public string MimeType => MimeTypeValue;
 
         public bool Initialize() => InitializeResult;
+
+        public bool ProbeConnection() => ProbeConnectionResult;
 
         public CaptureResult Scan() => ScanResult;
 

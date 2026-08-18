@@ -16,6 +16,8 @@ namespace FingerprintAgent.Adapters
 
         public bool Initialize() => true;
 
+        public bool ProbeConnection() => IsConnected;
+
         public string VendorErrorCode { get { return "MOCK"; } }
 
         public CaptureResult Scan()

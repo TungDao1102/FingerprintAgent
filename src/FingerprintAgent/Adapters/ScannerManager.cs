@@ -80,41 +80,42 @@ namespace FingerprintAgent.Adapters
             }
         }
 
-        /// <summary>
-        /// Probes adapters in priority order to determine real connection state.
-        /// Does NOT trigger backoff escalation (unlike Scan()). Does NOT require a
-        /// successful capture to report success — only verifies the SDK can be
-        /// initialized and a device opened.
-        ///
-        /// Fast path: if a cached ActiveAdapter is already connected, returns its
-        /// info without re-running Initialize() on every adapter (avoids SDK state
-        /// churn from repeated /health polls).
-        ///
-        /// On first successful probe, promotes the adapter to ActiveAdapter so
-        /// the next Scan() call uses it directly without re-initializing.
-        /// </summary>
-        /// <returns>true if any adapter initialized successfully</returns>
-        public bool TryProbe(out string deviceId, out string model, out string vendorErrorCode)
+    /// <summary>
+    /// Probes adapters in priority order to determine real connection state.
+    /// Does NOT trigger backoff escalation (unlike Scan()). Does NOT require a
+    /// successful capture to report success — only verifies the SDK can be
+    /// initialized and a device opened.
+    ///
+    /// Fast path: if a cached ActiveAdapter reports IsConnected=true, verify it
+    /// with the lightweight ProbeConnection() before trusting the cached flag.
+    /// This makes /health accurate on every call: ZKTeco re-queries device count
+    /// in ~1ms; other adapters return the cached flag (no real SDK installed).
+    ///
+    /// On first successful probe, promotes the adapter to ActiveAdapter so
+    /// the next Scan() call uses it directly without re-initializing.
+    /// </summary>
+    /// <returns>true if any adapter is currently connected</returns>
+    public bool TryProbe(out string deviceId, out string model, out string vendorErrorCode)
+    {
+        deviceId = "no-device";
+        model = "no-device";
+        vendorErrorCode = "NONE";
+
+        IScannerAdapter[] currentAdapters;
+        IScannerAdapter cached = null;
+        lock (_adapterLock)
         {
-            deviceId = "no-device";
-            model = "no-device";
-            vendorErrorCode = "NONE";
+            currentAdapters = _adapters;
+            cached = _activeAdapter;
+        }
 
-            IScannerAdapter[] currentAdapters;
-            IScannerAdapter cached = null;
-            lock (_adapterLock)
-            {
-                currentAdapters = _adapters;
-                cached = _activeAdapter;
-            }
-
-            if (cached != null && cached.IsConnected)
-            {
-                deviceId = cached.DeviceId;
-                model = cached.Model;
-                vendorErrorCode = cached.VendorErrorCode;
-                return true;
-            }
+        if (cached != null && cached.IsConnected && cached.ProbeConnection())
+        {
+            deviceId = cached.DeviceId;
+            model = cached.Model;
+            vendorErrorCode = cached.VendorErrorCode;
+            return true;
+        }
 
             if (currentAdapters == null || currentAdapters.Length == 0)
                 return false;
@@ -149,6 +150,17 @@ namespace FingerprintAgent.Adapters
         /// Initialize() enables lazy-connect semantics for all vendor SDKs.
         /// </summary>
         public bool Initialize() => true;
+
+        /// <summary>
+        /// Delegates to the ActiveAdapter's lightweight probe. Returns false if no
+        /// active adapter is set. Thread-safe via _adapterLock.
+        /// </summary>
+        public bool ProbeConnection()
+        {
+            IScannerAdapter active;
+            lock (_adapterLock) { active = _activeAdapter; }
+            return active?.ProbeConnection() ?? false;
+        }
 
         /// <summary>
         /// Constructs ScannerManager from AgentConfig. When MockMode=true, wraps
