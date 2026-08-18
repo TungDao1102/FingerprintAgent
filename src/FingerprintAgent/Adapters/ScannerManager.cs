@@ -280,17 +280,17 @@ namespace FingerprintAgent.Adapters
         ///
         /// Total budget: 20 seconds across all adapter attempts (D-06, extended to
         /// accommodate the active adapter's full rolling-capture window on ZK9500).
-        /// Per-adapter budget: ~3 seconds via linked CTS (D-06).
+        /// Per-adapter budget is NOT enforced — ZKTecoAdapter needs 15s rolling-capture
+        /// for UX (D-13: centralized timeout only).
         /// </summary>
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             string cid = AgentLogger.GenerateCorrelationId();
 
             // MockMode: delegate directly to mock
             if (_mockMode)
             {
-                var result = ActiveAdapter.Scan();
-                return result;
+                return ActiveAdapter.Scan(cancellationToken);
             }
 
             // SCAN-06 backoff: retry active adapter once if it was previously connected
@@ -303,7 +303,7 @@ namespace FingerprintAgent.Adapters
                 if (current.Initialize())
                 {
                     _logger?.Info(null, "ScannerManager: active adapter reconnected, proceeding");
-                    var retryResult = current.Scan();
+                    var retryResult = current.Scan(cancellationToken);
                     if (retryResult.IsSuccess)
                     {
                         ActiveAdapter = current;
@@ -311,22 +311,22 @@ namespace FingerprintAgent.Adapters
                         return retryResult;
                     }
                     _logger?.Warn(null, $"ScannerManager: active adapter retry scan failed: {retryResult.ErrorMessage}");
-                    // fall through to normal priority fallback
                 }
                 else
                 {
                     _logger?.Warn(null, $"ScannerManager: active adapter retry initialize failed: {current.VendorErrorCode}");
-                    // fall through to normal priority fallback
                 }
             }
 
-            // 20-second total budget (D-06)
-            using (var totalCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token))
+            // 20-second total budget (D-13: centralized timeout only).
+            using (var totalCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken))
             {
                 totalCts.CancelAfter(TimeSpan.FromSeconds(20));
 
                 IScannerAdapter[] currentAdapters;
                 lock (_adapterLock) { currentAdapters = _adapters; }
+
+                CaptureResult lastResult = null;
                 foreach (var adapter in currentAdapters)
                 {
                     if (totalCts.Token.IsCancellationRequested)
@@ -335,42 +335,37 @@ namespace FingerprintAgent.Adapters
                         return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture timed out after 20 seconds across all adapters");
                     }
 
-                    // ~3 second per-adapter budget (D-06)
-                    using (var adapterCts = CancellationTokenSource.CreateLinkedTokenSource(totalCts.Token))
+                    try
                     {
-                        adapterCts.CancelAfter(TimeSpan.FromSeconds(3));
+                        _logger?.Debug(null, $"ScannerManager: trying {adapter.GetType().Name}");
 
-                        try
+                        if (adapter.Initialize())
                         {
-                            _logger?.Debug(null, $"ScannerManager: trying {adapter.GetType().Name}");
-
-                            if (adapter.Initialize())
+                            ActiveAdapter = adapter;
+                            var scanResult = adapter.Scan(totalCts.Token);
+                            if (scanResult.IsSuccess)
                             {
-                                ActiveAdapter = adapter;
-                                var scanResult = adapter.Scan();
-                                if (scanResult.IsSuccess)
-                                {
-                                    lock (_backoffLock) { _backoffStep = 0; _backoffUntil = DateTime.MinValue; }
-                                    _logger?.Info(cid, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
-                                    return scanResult;
-                                }
-                                _logger?.Warn(cid, $"ScannerManager: {adapter.GetType().Name} scan failed: {scanResult.ErrorMessage}");
+                                lock (_backoffLock) { _backoffStep = 0; _backoffUntil = DateTime.MinValue; }
+                                _logger?.Info(cid, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
                                 return scanResult;
                             }
-                            else
-                            {
-                                _logger?.Warn(null, $"ScannerManager: {adapter.GetType().Name} initialize returned false: {adapter.VendorErrorCode}");
-                            }
+                            _logger?.Warn(cid, $"ScannerManager: {adapter.GetType().Name} scan failed: {scanResult.ErrorMessage}");
+                            lastResult = scanResult;
+                            continue;
                         }
-                        catch (Exception ex)
-                        {
-                            _logger?.Error(null, $"ScannerManager: {adapter.GetType().Name} threw {ex.GetType().Name}: {ex.Message}");
-                        }
+                        _logger?.Warn(null, $"ScannerManager: {adapter.GetType().Name} initialize returned false: {adapter.VendorErrorCode}");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.Error(null, $"ScannerManager: {adapter.GetType().Name} threw {ex.GetType().Name}: {ex.Message}");
                     }
                 }
 
-                if (_adapters.Length == 0)
+                if (currentAdapters.Length == 0)
                     return CaptureResult.Fail("CONFIG_ERROR", "No scanner adapters configured and MockMode is disabled");
+
+                if (lastResult != null)
+                    return lastResult;
             }
 
             _logger?.Error(cid, "ScannerManager: all adapters failed");
