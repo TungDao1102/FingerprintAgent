@@ -4,6 +4,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
+using System.Threading;
 
 namespace FingerprintAgent.Adapters
 {
@@ -20,7 +21,7 @@ namespace FingerprintAgent.Adapters
 
         public string VendorErrorCode { get { return "MOCK"; } }
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             const int width = 320;
             const int height = 240;

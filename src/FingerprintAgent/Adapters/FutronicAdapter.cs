@@ -83,12 +83,18 @@ namespace FingerprintAgent.Adapters
             return true;
         }
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             if (_device == IntPtr.Zero)
             {
                 _vendorErrorCode = "NOT_INITIALIZED";
                 return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic scanner not initialized. Call Initialize() first.");
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _vendorErrorCode = "CANCELLED";
+                return CaptureResult.Fail("CAPTURE_TIMEOUT", "Futronic: capture cancelled");
             }
 
             _vendorErrorCode = "NONE";
@@ -275,6 +281,7 @@ namespace FingerprintAgent.Adapters
 // Stub implementation when FUTRONIC_SDK_PRESENT is not defined.
 // Allows compilation and unit testing without the vendor SDK DLL present.
 using System;
+using System.Threading;
 
 namespace FingerprintAgent.Adapters
 {
@@ -293,7 +300,7 @@ namespace FingerprintAgent.Adapters
             return false;
         }
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic: Stub adapter — SDK not present");
         }

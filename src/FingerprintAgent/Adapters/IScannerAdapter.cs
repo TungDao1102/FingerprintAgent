@@ -32,6 +32,11 @@ namespace FingerprintAgent.Adapters
         /// </summary>
         string VendorErrorCode { get; }
 
-        CaptureResult Scan();
+        /// <summary>
+        /// Performs capture. Optional CancellationToken enables ScannerManager's per-adapter
+        /// 3s budget (D-06). Adapters should honor cancellation at the next checkpoint
+        /// — not interrupt mid-native-call (corrupts native state).
+        /// </summary>
+        CaptureResult Scan(System.Threading.CancellationToken cancellationToken = default);
     }
 }

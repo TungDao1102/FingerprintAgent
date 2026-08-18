@@ -79,7 +79,7 @@ namespace FingerprintAgent.Adapters
             }
         }
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             if (_reader == null)
             {
@@ -116,6 +116,12 @@ namespace FingerprintAgent.Adapters
                 // Always stop capture — even if timeout occurred or exception was thrown.
                 // DPUruNet's StartCapture/StopCapture must be paired per call.
                 _capture.StopCapture();
+            }
+
+            if (cancellationToken.IsCancellationRequested && !signaled)
+            {
+                _vendorErrorCode = "CANCELLED";
+                return CaptureResult.Fail("CAPTURE_TIMEOUT", "DigitalPersona: capture cancelled by timeout");
             }
 
             if (!signaled || _capturedSample == null)
@@ -233,6 +239,7 @@ namespace FingerprintAgent.Adapters
 // Stub implementation when DIGITALPERSONA_SDK_PRESENT is not defined.
 // Allows compilation and unit testing without the vendor SDK DLL present.
 using System;
+using System.Threading;
 
 namespace FingerprintAgent.Adapters
 {
@@ -251,7 +258,7 @@ namespace FingerprintAgent.Adapters
 
         public bool ProbeConnection() => IsConnected;
 
-        public CaptureResult Scan()
+        public CaptureResult Scan(CancellationToken cancellationToken = default)
         {
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "DigitalPersona: Stub adapter — SDK not present");
         }
