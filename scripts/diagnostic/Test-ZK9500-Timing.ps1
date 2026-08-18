@@ -119,23 +119,38 @@ Write-Host "============================================================"
 Write-Host "  VERDICT"
 Write-Host "============================================================"
 
+# Adapter has an 8s rolling-capture budget (per fix(03)). Total ScannerManager budget is 10s.
+# Observed server-side latency is reported by the script; HTTP overhead adds ~1-2s.
+
 $verdict = ""
-if ($t1.ElapsedSec -ge 4 -and $t1.ElapsedSec -le 12) {
-    $verdict += "[OK] T1 confirms SDK native timeout = ~$([Math]::Round($t1.ElapsedSec,1))s`n"
-} elseif ($t1.ElapsedSec -lt 4) {
-    $verdict += "[!] T1 fail in <4s — Initialize failed, NOT SDK timeout`n"
+
+# T1: No finger — expected to FAIL by exhausting the 8s adapter retry budget
+if ($t1.Success) {
+    # SDK captured something with no finger — likely sensor residue/phantom. Investigate cleanliness.
+    $verdict += "[!] T1 captured in ~$([Math]::Round($t1.ElapsedSec,1))s WITH NO FINGER — sensor residue or spurious detection (clean sensor and retry)`n"
+} elseif ($t1.ElapsedSec -ge 7 -and $t1.ElapsedSec -le 12) {
+    $verdict += "[OK] T1 fail at ~$([Math]::Round($t1.ElapsedSec,1))s = adapter 8s budget exhausted (expected, no finger)`n"
+} elseif ($t1.ElapsedSec -gt 12) {
+    $verdict += "[!] T1 fail >12s — ScannerManager 10s timeout fired (adapter hung beyond budget, possible SDK regression)`n"
 } else {
-    $verdict += "[!] T1 took >12s — ScannerManager 10s timeout fired first`n"
+    $verdict += "[!] T1 fail in <7s — adapter budget not exhausted, possible Initialize() or early-exit regression`n"
 }
 
+# T2: Finger pre-placed — expected SUCCESS quickly (SDK detects on first poll)
 if ($t2.Success) {
-    $verdict += "[OK] T2 succeed with finger pre-placed — SDK works`n"
+    $t2Elapsed = [Math]::Round($t2.ElapsedSec, 1)
+    if ($t2Elapsed -le 5) {
+        $verdict += "[OK] T2 succeeded in ${t2Elapsed}s with finger pre-placed — SDK detects immediately`n"
+    } else {
+        $verdict += "[OK] T2 succeeded in ${t2Elapsed}s (slow but within 8s budget — SDK caught finger mid-retry)`n"
+    }
 } elseif ($t2.ElapsedSec -ge 4 -and $t2.ElapsedSec -le 12) {
-    $verdict += "[ROOT CAUSE = Sensor/SDK] T2 fail with finger pre-placed — sensor not detecting finger (driver/calibration issue)`n"
+    $verdict += "[ROOT CAUSE = Sensor/SDK] T2 fail with finger pre-placed in ~$([Math]::Round($t2.ElapsedSec,1))s — sensor not detecting finger (driver/calibration issue)`n"
 } elseif ($t2.ElapsedSec -gt 12) {
     $verdict += "[ROOT CAUSE = SDK HANG] T2 timeout at ScannerManager — SDK hung beyond 10s`n"
 }
 
+# T3: Finger during request — expected SUCCESS within 8s rolling window
 if ($t3.Success -and -not $t2.Success) {
     $verdict += "[INSIGHT] T3 succeeded but T2 failed — SDK has 'first-time' detection issue with pre-placed finger`n"
 }
