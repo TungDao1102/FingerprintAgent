@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
 using ZkTecoFingerPrint;
@@ -15,8 +14,18 @@ namespace FingerprintAgent.Adapters
     /// ZKTeco fingerprint scanner adapter using ZkTecoFingerPrint NuGet (v1.2.1).
     /// Handles GetDeviceCount()=0 quirk with retry/delay pattern (SCAN-10 / D-11).
     /// Returns conventional grayscale PNG bytes — NO pixel inversion (D-10).
-    /// AcquireFingerprintAsync is wrapped with CancellationToken for a safety-net timeout;
-    /// the real budget (~3s per adapter, 10s total) is enforced by ScannerManager (D-06).
+    ///
+    /// Capture uses the buffer-overload of <c>ZkFingerPrintDevice.AcquireFingerprintAsync(byte[], CancellationToken)</c>.
+    /// The parameterless overload queries ZK parameter 106 to size the image buffer;
+    /// parameter 106 is unimplemented on ZK9500 (ZK SDK 5.3 / ZK10.0 firmware) and
+    /// returns ZKFP_ERR_CAPTURE (-8) immediately, which the wrapper surfaces as a
+    /// capture failure without ever calling the blocking capture. The buffer-overload
+    /// skips that query and writes directly into the caller-supplied buffer.
+    ///
+    /// Rolling-capture: the wrapper's blocking call has an internal timeout (~1s on
+    /// ZK9500). We retry on Capture errors only while elapsed time is below the
+    /// 8-second adapter budget (under ScannerManager's 10s total, D-06). The user
+    /// needs time to click button → reach for scanner → place finger.
     /// </summary>
     public sealed class ZKTecoAdapter : IScannerAdapter, IDisposable
     {
@@ -147,88 +156,36 @@ namespace FingerprintAgent.Adapters
                         $"ZKTeco: invalid sensor dimensions {width}x{height}");
                 }
 
-                int imageSize = width * height;
-                // Vendor demo uses 2048-byte template buffer; allocate same for raw P/Invoke call.
-                const int templateBufferSize = 2048;
+                byte[] imageBuffer = new byte[width * height];
 
-                byte[] imageBuffer = new byte[imageSize];
-                IntPtr imagePtr = Marshal.AllocHGlobal(imageSize);
-                IntPtr templatePtr = Marshal.AllocHGlobal(templateBufferSize);
-                uint templateSize = templateBufferSize;
+                const int captureBudgetMs = 8000;
+                const int retryDelayMs = 100;
+                var stopwatch = Stopwatch.StartNew();
+                ZkResult<ZkFingerPrintResult?>? lastResult = null;
 
-                try
+                do
                 {
-                    // BUGFIX (D-12): The ZkTecoFingerPrint wrapper's AcquireFingerprintAsync
-                    // queries parameter code 106 to discover image buffer size before calling
-                    // ZKFPM_AcquireFingerprint. On ZK SDK 5.3 / ZK10.0 firmware (e.g. ZK9500)
-                    // parameter 106 returns ZKFP_ERR_CAPTURE (-8) immediately, so the wrapper
-                    // returns ERROR_CAPTURE without ever invoking the blocking capture call.
-                    // Vendor demo (ZKFingerSDK 5.3) sidesteps the wrapper entirely and calls
-                    // ZKFPM_AcquireFingerprint directly with width*height buffer. We do the same
-                    // here — keep the wrapper for OpenDevice (works), bypass for capture.
-                    //
-                    // ROLLING-CAPTURE (D-14, D-16): SDK's ZKFPM_AcquireFingerprint on ZK9500
-                    // blocks for ~1s before returning ERROR_CAPTURE (-8) when no finger is
-                    // present — too short for UX where user clicks button then reaches for
-                    // scanner (typical 5-10s end-to-end). Retry on ERROR_CAPTURE only,
-                    // while total elapsed time is below budget. Budget = 8s (under
-                    // ScannerManager's 10s total). Note: ScannerManager's per-adapter
-                    // adapterCts is dead code (CTS never passed to adapter.Scan()), so
-                    // each adapter must self-manage its capture window.
-                    const int captureBudgetMs = 8000;
-                    const int retryDelayMs = 100;
-                    int ret = -1;
-                    ZkResponse err = ZkResponse.Capture;
-                    var stopwatch = Stopwatch.StartNew();
+                    lastResult = _device.AcquireFingerprintAsync(imageBuffer, CancellationToken.None)
+                        .GetAwaiter().GetResult();
+                    if (lastResult.IsSuccess)
+                        break;
+                    Thread.Sleep(retryDelayMs);
+                } while (stopwatch.ElapsedMilliseconds < captureBudgetMs);
 
-                    do
-                    {
-                        ret = ZKFPM_AcquireFingerprint(
-                            _device.Handle,
-                            imagePtr,
-                            (uint)imageSize,
-                            templatePtr,
-                            ref templateSize);
-
-                        if (ret == 0)
-                            break;
-
-                        err = (ZkResponse)ret;
-                        if (err != ZkResponse.Capture)
-                        {
-                            _vendorErrorCode = ZkResponseToString(err);
-                            return CaptureResult.Fail("CAPTURE_FAILED",
-                                $"ZKTeco: capture failed ({ZkResponseToString(err)})");
-                        }
-
-                        if (stopwatch.ElapsedMilliseconds >= captureBudgetMs)
-                            break;
-
-                        Thread.Sleep(retryDelayMs);
-                    } while (stopwatch.ElapsedMilliseconds < captureBudgetMs);
-
-                    if (ret != 0)
-                    {
-                        _vendorErrorCode = ZkResponseToString(err);
-                        int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
-                        return CaptureResult.Fail("CAPTURE_FAILED",
-                            $"ZKTeco: no finger detected within {elapsedSec}s");
-                    }
-
-                    Marshal.Copy(imagePtr, imageBuffer, 0, imageSize);
-                }
-                finally
+                if (lastResult == null || !lastResult.IsSuccess)
                 {
-                    Marshal.FreeHGlobal(imagePtr);
-                    Marshal.FreeHGlobal(templatePtr);
+                    int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
+                    _vendorErrorCode = ZkResponseToString(lastResult?.Response ?? ZkResponse.Capture);
+                    return CaptureResult.Fail("CAPTURE_FAILED",
+                        $"ZKTeco: no finger detected within {elapsedSec}s");
                 }
 
-                // Wrap raw grayscale pixels as a BMP file via the wrapper's public
-                // BitmapFormat helper, then re-encode as PNG for the HTTP response.
+                var captureResult = lastResult.Value!;
+
                 byte[] pngBytes;
-                using (var bmpStream = BitmapFormat.GetBitmap(imageBuffer, width, height))
+                using (var ms = new MemoryStream(captureResult.Bitmap))
+                using (var bmp = new Bitmap(ms))
                 using (var pngStream = new MemoryStream())
-                using (var bmp = new Bitmap(bmpStream))
                 {
                     bmp.Save(pngStream, ImageFormat.Png);
                     pngBytes = pngStream.ToArray();
@@ -260,23 +217,6 @@ namespace FingerprintAgent.Adapters
                 return CaptureResult.Fail("CAPTURE_FAILED", $"ZKTeco: {ex.Message}");
             }
         }
-
-        #region P/Invoke Declarations
-
-        // Direct wrapper around libzkfp.dll's blocking capture call. Bypasses the
-        // broken ZkTecoFingerPrint wrapper's parameter-106 query (see Scan() BUGFIX).
-        // Signature matches libzkfp.h ZKFPM_AcquireFingerprint.
-        // libzkfp.h declares APICALL = __stdcall on Windows, so leave CallingConvention
-        // unspecified (= Winapi → StdCall on x86). Cdecl would corrupt the stack.
-        [DllImport("libzkfp.dll")]
-        private static extern int ZKFPM_AcquireFingerprint(
-            IntPtr hDevice,
-            IntPtr fpImage,
-            uint cbFPImage,
-            IntPtr fpTemplate,
-            ref uint cbTemplate);
-
-        #endregion
 
         /// <summary>
         /// Converts a ZkResponse enum value to a human-readable string.
