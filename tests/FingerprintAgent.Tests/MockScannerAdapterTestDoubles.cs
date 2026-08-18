@@ -30,7 +30,7 @@ namespace FingerprintAgent.Tests
 
         public bool ProbeConnection() => ProbeConnectionResult;
 
-        public CaptureResult Scan() => ScanResult;
+        public CaptureResult Scan(CancellationToken cancellationToken = default) => ScanResult;
 
         public string VendorErrorCode => VendorErrorCodeValue;
     }

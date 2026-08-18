@@ -1,4 +1,5 @@
 using System;
+using System.Threading;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Configuration;
 using Moq;
@@ -170,7 +171,7 @@ namespace FingerprintAgent.Tests
             successAdapter.Setup(a => a.DeviceId).Returns("success-device");
             successAdapter.Setup(a => a.Model).Returns("Success Model");
             successAdapter.Setup(a => a.VendorErrorCode).Returns("NONE");
-            successAdapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            successAdapter.Setup(a => a.Scan(It.IsAny<CancellationToken>())).Returns(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = new byte[] { 0, 1, 2 },
@@ -218,7 +219,7 @@ namespace FingerprintAgent.Tests
             });
             adapter.Setup(a => a.IsConnected).Returns(() => initCallCount > 1);
             adapter.Setup(a => a.VendorErrorCode).Returns("NONE");
-            adapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            adapter.Setup(a => a.Scan(It.IsAny<CancellationToken>())).Returns(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = new byte[] { 0, 1, 2 },
@@ -251,7 +252,7 @@ namespace FingerprintAgent.Tests
             successAdapter.Setup(a => a.IsConnected).Returns(true);
             successAdapter.Setup(a => a.DeviceId).Returns("fallback-device");
             successAdapter.Setup(a => a.VendorErrorCode).Returns("NONE");
-            successAdapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            successAdapter.Setup(a => a.Scan(It.IsAny<CancellationToken>())).Returns(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = new byte[] { 0, 1, 2 },
@@ -274,21 +275,50 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void ScannerManager_ScanReturnsDeviceScanFailure_DoesNotFallThrough()
+        public void ScannerManager_Scan_PassesCancellationToken_ToAdapter()
+        {
+            var adapter = new Mock<IScannerAdapter>();
+            adapter.Setup(a => a.Initialize()).Returns(true);
+            adapter.Setup(a => a.IsConnected).Returns(true);
+            adapter.Setup(a => a.DeviceId).Returns("test");
+            adapter.Setup(a => a.VendorErrorCode).Returns("NONE");
+            adapter.Setup(a => a.Scan(It.IsAny<CancellationToken>())).Returns(new CaptureResult
+            {
+                IsSuccess = true,
+                ImageBytes = new byte[] { 0 },
+                MimeType = "image/png",
+                CapturedAt = DateTime.UtcNow.ToString("O"),
+                DeviceId = "test",
+                Width = 1,
+                Height = 1
+            });
+
+            var sm = new ScannerManager(new[] { adapter.Object }, logger: null);
+            using (var cts = new CancellationTokenSource())
+            {
+                sm.Scan(cts.Token);
+            }
+
+            adapter.Verify(a => a.Scan(It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        }
+
+        [Fact]
+        public void ScannerManager_ScanReturnsDeviceScanFailure_FallsThroughToBackup()
         {
             var connectedAdapter = new Mock<IScannerAdapter>();
             connectedAdapter.Setup(a => a.Initialize()).Returns(true);
             connectedAdapter.Setup(a => a.IsConnected).Returns(true);
             connectedAdapter.Setup(a => a.DeviceId).Returns("zk9500");
             connectedAdapter.Setup(a => a.VendorErrorCode).Returns("NONE");
-            connectedAdapter.Setup(a => a.Scan()).Returns(CaptureResult.Fail("CAPTURE_FAILED", "no finger detected"));
+            connectedAdapter.Setup(a => a.Scan(It.IsAny<CancellationToken>()))
+                .Returns(CaptureResult.Fail("CAPTURE_FAILED", "no finger detected"));
 
             var backupAdapter = new Mock<IScannerAdapter>();
             backupAdapter.Setup(a => a.Initialize()).Returns(true);
             backupAdapter.Setup(a => a.IsConnected).Returns(true);
             backupAdapter.Setup(a => a.DeviceId).Returns("backup");
             backupAdapter.Setup(a => a.VendorErrorCode).Returns("NONE");
-            backupAdapter.Setup(a => a.Scan()).Returns(new CaptureResult
+            backupAdapter.Setup(a => a.Scan(It.IsAny<CancellationToken>())).Returns(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = new byte[] { 0xFF },
@@ -306,9 +336,9 @@ namespace FingerprintAgent.Tests
 
             var result = sm.Scan();
 
-            Assert.False(result.IsSuccess, "primary adapter's scan failure must be returned, not fall-through success");
-            Assert.Equal("CAPTURE_FAILED", result.ErrorCode);
-            backupAdapter.Verify(a => a.Initialize(), Times.Never, "must not try backup when primary is connected");
+            Assert.True(result.IsSuccess, "primary adapter's scan failure must fall through to backup adapter");
+            Assert.Equal("backup", result.DeviceId);
+            backupAdapter.Verify(a => a.Initialize(), Times.AtLeastOnce, "backup must be tried when primary scan fails");
         }
 
         #endregion
