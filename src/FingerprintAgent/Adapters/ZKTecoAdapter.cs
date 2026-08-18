@@ -74,28 +74,29 @@ namespace FingerprintAgent.Adapters
         public string VendorErrorCode => _vendorErrorCode ?? "NONE";
 
         /// <summary>
-        /// Lightweight real-time connection check. Re-queries ZkTecoFingerHost.GetDeviceCount()
-        /// to verify the device is still attached without full re-initialization. Takes ~1ms
-        /// (no device open/close). Updates _isConnected to false if the device was unplugged
-        /// since the last Initialize(). Without this, /health would report stale "healthy"
-        /// state until the next /api/capture triggered a full re-init.
+        /// Real-time connection check. ZkTecoFingerHost caches device info after unplug,
+        /// so a lightweight GetDeviceCount() check is unreliable for detecting device
+        /// removal. Forces Close + re-Initialize to re-enumerate USB devices (~50-200ms).
+        /// Locked via _hostLock to prevent race with concurrent Scan().
         /// </summary>
         public bool ProbeConnection()
         {
-            if (_device == null)
-                return false;
-
-            int count = ZkTecoFingerHost.GetDeviceCount();
-            if (count <= 0)
+            lock (_hostLock)
             {
-                _isConnected = false;
-                _vendorErrorCode = ZkResponseToString(ZkResponse.NoDevice);
-                return false;
+                try { ZkTecoFingerHost.Close(); } catch { /* best effort */ }
+                return InitializeInternal();
             }
-            return _isConnected;
         }
 
         public bool Initialize()
+        {
+            lock (_hostLock)
+            {
+                return InitializeInternal();
+            }
+        }
+
+        private bool InitializeInternal()
         {
             // Dispose prior device — SDK sensor state corrupts after each capture,
             // subsequent AcquireFingerprint returns ERROR_CAPTURE in ~70ms instead of 2s.
@@ -161,16 +162,26 @@ namespace FingerprintAgent.Adapters
 
         public CaptureResult Scan()
         {
-            if (_device == null || !_isConnected)
+            // Snapshot device handle under lock so ProbeConnection's Close+Initialize
+            // (also under lock) can't dispose the handle mid-capture. Long
+            // AcquireFingerprintAsync runs outside lock to avoid blocking /health for
+            // up to 15s during a capture.
+            ZkFingerPrintDevice device;
+            int width, height;
+            lock (_hostLock)
             {
-                _vendorErrorCode = "SCANNER_NOT_CONNECTED";
-                return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "ZKTeco: scanner not initialized");
+                if (_device == null || !_isConnected)
+                {
+                    _vendorErrorCode = "SCANNER_NOT_CONNECTED";
+                    return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "ZKTeco: scanner not initialized");
+                }
+                device = _device;
+                width = _width;
+                height = _height;
             }
 
             try
             {
-                int width = _device.Width;
-                int height = _device.Height;
                 if (width <= 0 || height <= 0)
                 {
                     _vendorErrorCode = "INVALID_DIMENSIONS";
@@ -187,7 +198,7 @@ namespace FingerprintAgent.Adapters
 
                 do
                 {
-                    lastResult = _device.AcquireFingerprintAsync(imageBuffer, CancellationToken.None)
+                    lastResult = device.AcquireFingerprintAsync(imageBuffer, CancellationToken.None)
                         .GetAwaiter().GetResult();
                     if (lastResult.IsSuccess)
                         break;

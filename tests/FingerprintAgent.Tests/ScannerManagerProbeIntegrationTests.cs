@@ -95,22 +95,16 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void TryProbe_FastPath_FasterThanColdPath()
+        public void TryProbe_WarmAndColdPath_ReturnSameDeviceId_ForCachedAdapter()
         {
-            RequireDevice(nameof(TryProbe_FastPath_FasterThanColdPath));
+            RequireDevice(nameof(TryProbe_WarmAndColdPath_ReturnSameDeviceId_ForCachedAdapter));
 
-            var swCold = Stopwatch.StartNew();
             string d1, m1, v1;
             _scanner.TryProbe(out d1, out m1, out v1);
-            swCold.Stop();
 
-            var swWarm = Stopwatch.StartNew();
             string d2, m2, v2;
             _scanner.TryProbe(out d2, out m2, out v2);
-            swWarm.Stop();
 
-            Assert.True(swWarm.ElapsedMilliseconds <= swCold.ElapsedMilliseconds,
-                $"Warm path ({swWarm.ElapsedMilliseconds}ms) must be <= cold path ({swCold.ElapsedMilliseconds}ms)");
             Assert.Equal(d1, d2);
             Assert.Equal(m1, m2);
         }
