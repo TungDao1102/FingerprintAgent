@@ -80,6 +80,68 @@ namespace FingerprintAgent.Adapters
         }
 
         /// <summary>
+        /// Probes adapters in priority order to determine real connection state.
+        /// Does NOT trigger backoff escalation (unlike Scan()). Does NOT require a
+        /// successful capture to report success — only verifies the SDK can be
+        /// initialized and a device opened.
+        ///
+        /// Fast path: if a cached ActiveAdapter is already connected, returns its
+        /// info without re-running Initialize() on every adapter (avoids SDK state
+        /// churn from repeated /health polls).
+        ///
+        /// On first successful probe, promotes the adapter to ActiveAdapter so
+        /// the next Scan() call uses it directly without re-initializing.
+        /// </summary>
+        /// <returns>true if any adapter initialized successfully</returns>
+        public bool TryProbe(out string deviceId, out string model, out string vendorErrorCode)
+        {
+            deviceId = "no-device";
+            model = "no-device";
+            vendorErrorCode = "NONE";
+
+            IScannerAdapter[] currentAdapters;
+            IScannerAdapter cached = null;
+            lock (_adapterLock)
+            {
+                currentAdapters = _adapters;
+                cached = _activeAdapter;
+            }
+
+            if (cached != null && cached.IsConnected)
+            {
+                deviceId = cached.DeviceId;
+                model = cached.Model;
+                vendorErrorCode = cached.VendorErrorCode;
+                return true;
+            }
+
+            if (currentAdapters == null || currentAdapters.Length == 0)
+                return false;
+
+            foreach (var adapter in currentAdapters)
+            {
+                try
+                {
+                    if (adapter.Initialize())
+                    {
+                        deviceId = adapter.DeviceId;
+                        model = adapter.Model;
+                        vendorErrorCode = adapter.VendorErrorCode;
+                        ActiveAdapter = adapter;
+                        return true;
+                    }
+                    vendorErrorCode = adapter.VendorErrorCode;
+                }
+                catch (Exception ex)
+                {
+                    // Never let a single adapter's exception crash /health.
+                    vendorErrorCode = $"PROBE_EXCEPTION:{ex.GetType().Name}";
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
         /// ScannerManager itself does not maintain persistent connection state.
         /// Initialize() returns true — individual adapters are initialized on each Scan() call.
         /// D-01 specifies no persistent connection state between requests; per-call
@@ -270,18 +332,16 @@ namespace FingerprintAgent.Adapters
 
                             if (adapter.Initialize())
                             {
+                                ActiveAdapter = adapter;
                                 var scanResult = adapter.Scan();
                                 if (scanResult.IsSuccess)
                                 {
-                                    ActiveAdapter = adapter;
                                     lock (_backoffLock) { _backoffStep = 0; _backoffUntil = DateTime.MinValue; }
                                     _logger?.Info(cid, $"ScannerManager: {adapter.GetType().Name} succeeded, DeviceId={adapter.DeviceId}");
                                     return scanResult;
                                 }
-                                else
-                                {
-                                    _logger?.Warn(null, $"ScannerManager: {adapter.GetType().Name} scan failed: {scanResult.ErrorMessage}");
-                                }
+                                _logger?.Warn(cid, $"ScannerManager: {adapter.GetType().Name} scan failed: {scanResult.ErrorMessage}");
+                                return scanResult;
                             }
                             else
                             {

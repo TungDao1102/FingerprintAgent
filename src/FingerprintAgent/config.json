@@ -13,8 +13,13 @@
     "allowedOrigins": []
   },
   "scanner": {
-    "priority": ["ZkTeco", "SecuGen", "Futronic", "DigitalPersona"],
-    "mockMode": true
+    "priority": [
+      "ZKTeco",
+      "SecuGen",
+      "Futronic",
+      "DigitalPersona"
+    ],
+    "mockMode": false
   },
   "logging": {
     "level": "INFO",

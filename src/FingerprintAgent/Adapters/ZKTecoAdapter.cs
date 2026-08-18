@@ -3,9 +3,9 @@ using System;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
-using System.Threading.Tasks;
 using ZkTecoFingerPrint;
 
 namespace FingerprintAgent.Adapters
@@ -19,6 +19,12 @@ namespace FingerprintAgent.Adapters
     /// </summary>
     public sealed class ZKTecoAdapter : IScannerAdapter, IDisposable
     {
+        // Guards concurrent calls to EnsureHostInitialized(). The native ZKTeco host
+        // is a process-wide singleton — repeated Initialize() calls after a failed or
+        // abandoned session leave the native state inconsistent and return ERROR_INITLIB.
+        // We must Close() before re-Initialize() to recover.
+        private static readonly object _hostLock = new object();
+
         private ZkFingerPrintDevice? _device;
         private int _width;
         private int _height;
@@ -59,9 +65,25 @@ namespace FingerprintAgent.Adapters
 
         public bool Initialize()
         {
-            // ZkTecoFingerHost.Initialize() is static — returns ZkResult<int>
-            var initResult = ZkTecoFingerHost.Initialize();
-            if (!initResult.IsSuccess)
+            // Dispose prior device — SDK sensor state corrupts after each capture,
+            // subsequent AcquireFingerprint returns ERROR_CAPTURE in ~70ms instead of 2s.
+            if (_device != null)
+            {
+                try { _device.Dispose(); } catch { }
+                _device = null;
+                _isConnected = false;
+            }
+
+            // ZkTecoFingerHost is a process-wide singleton. Calling Initiaize() when
+            // the previous session was abandoned (e.g. capture failed mid-flight) leaves
+            // the native context in a bad state and returns ERROR_INITLIB on retry.
+            // Recovery: Close() then re-Initialize().
+            var initResult = EnsureHostInitialized();
+
+            // AlreadyInit (1) means the host is already usable — IsSuccess is false
+            // (only Ok=0 is "success") but the host state is what we want. Treat as OK.
+            bool hostReady = initResult.IsSuccess || initResult.Response == ZkResponse.AlreadyInit;
+            if (!hostReady)
             {
                 _vendorErrorCode = ZkResponseToString(initResult.Response);
                 return false;
@@ -96,8 +118,11 @@ namespace FingerprintAgent.Adapters
             _device = deviceResult.Value;
             _width = _device!.Width;
             _height = _device!.Height;
-            _deviceId = !string.IsNullOrEmpty(_device!.SerialNumber) ? _device.SerialNumber : _deviceId;
-            _model = !string.IsNullOrEmpty(_device!.Name) ? _device.Name : _model;
+            // Lock device identity on first Initialize — ZK SDK's _device.Name mutates after AcquireFingerprint
+            if (_deviceId == "ZKTeco-unknown" && !string.IsNullOrEmpty(_device!.SerialNumber))
+                _deviceId = _device.SerialNumber;
+            if (_model == "ZKTeco Device" && !string.IsNullOrEmpty(_device!.Name))
+                _model = _device.Name;
             _isConnected = true;
             return true;
         }
@@ -112,23 +137,91 @@ namespace FingerprintAgent.Adapters
 
             try
             {
-                var captureResult = _device.AcquireFingerprintAsync(CancellationToken.None).GetAwaiter().GetResult();
-
-                if (!captureResult.IsSuccess)
+                int width = _device.Width;
+                int height = _device.Height;
+                if (width <= 0 || height <= 0)
                 {
-                    _vendorErrorCode = ZkResponseToString(captureResult.Response);
+                    _vendorErrorCode = "INVALID_DIMENSIONS";
                     return CaptureResult.Fail("CAPTURE_FAILED",
-                        $"ZKTeco: capture failed ({ZkResponseToString(captureResult.Response)})");
+                        $"ZKTeco: invalid sensor dimensions {width}x{height}");
                 }
 
-                byte[] pngBytes;
-                byte[] bmpBytes = captureResult.Value!.Bitmap;
-                using (var ms = new MemoryStream(bmpBytes))
-                using (var bmp = new Bitmap(ms))
-                using (var outMs = new MemoryStream())
+                int imageSize = width * height;
+                // Vendor demo uses 2048-byte template buffer; allocate same for raw P/Invoke call.
+                const int templateBufferSize = 2048;
+
+                byte[] imageBuffer = new byte[imageSize];
+                IntPtr imagePtr = Marshal.AllocHGlobal(imageSize);
+                IntPtr templatePtr = Marshal.AllocHGlobal(templateBufferSize);
+                uint templateSize = templateBufferSize;
+
+                try
                 {
-                    bmp.Save(outMs, ImageFormat.Png);
-                    pngBytes = outMs.ToArray();
+                    // BUGFIX (D-12): The ZkTecoFingerPrint wrapper's AcquireFingerprintAsync
+                    // queries parameter code 106 to discover image buffer size before calling
+                    // ZKFPM_AcquireFingerprint. On ZK SDK 5.3 / ZK10.0 firmware (e.g. ZK9500)
+                    // parameter 106 returns ZKFP_ERR_CAPTURE (-8) immediately, so the wrapper
+                    // returns ERROR_CAPTURE without ever invoking the blocking capture call.
+                    // Vendor demo (ZKFingerSDK 5.3) sidesteps the wrapper entirely and calls
+                    // ZKFPM_AcquireFingerprint directly with width*height buffer. We do the same
+                    // here — keep the wrapper for OpenDevice (works), bypass for capture.
+                    //
+                    // ROLLING-CAPTURE (D-14): SDK's ZKFPM_AcquireFingerprint has ~2s internal
+                    // timeout — too short for UX where user clicks button then reaches for scanner.
+                    // Retry on ERROR_CAPTURE only; 3×~2.1s = 6s total wait window.
+                    const int maxAttempts = 3;
+                    const int retryDelayMs = 100;
+                    int ret = -1;
+                    ZkResponse err = ZkResponse.Capture;
+
+                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    {
+                        ret = ZKFPM_AcquireFingerprint(
+                            _device.Handle,
+                            imagePtr,
+                            (uint)imageSize,
+                            templatePtr,
+                            ref templateSize);
+
+                        if (ret == 0)
+                            break;
+
+                        err = (ZkResponse)ret;
+                        if (err != ZkResponse.Capture)
+                        {
+                            _vendorErrorCode = ZkResponseToString(err);
+                            return CaptureResult.Fail("CAPTURE_FAILED",
+                                $"ZKTeco: capture failed ({ZkResponseToString(err)})");
+                        }
+
+                        if (attempt < maxAttempts)
+                            Thread.Sleep(retryDelayMs);
+                    }
+
+                    if (ret != 0)
+                    {
+                        _vendorErrorCode = ZkResponseToString(err);
+                        return CaptureResult.Fail("CAPTURE_FAILED",
+                            $"ZKTeco: no finger detected within {maxAttempts * retryDelayMs / 1000}s");
+                    }
+
+                    Marshal.Copy(imagePtr, imageBuffer, 0, imageSize);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(imagePtr);
+                    Marshal.FreeHGlobal(templatePtr);
+                }
+
+                // Wrap raw grayscale pixels as a BMP file via the wrapper's public
+                // BitmapFormat helper, then re-encode as PNG for the HTTP response.
+                byte[] pngBytes;
+                using (var bmpStream = BitmapFormat.GetBitmap(imageBuffer, width, height))
+                using (var pngStream = new MemoryStream())
+                using (var bmp = new Bitmap(bmpStream))
+                {
+                    bmp.Save(pngStream, ImageFormat.Png);
+                    pngBytes = pngStream.ToArray();
                 }
 
                 string verificationData;
@@ -147,8 +240,8 @@ namespace FingerprintAgent.Adapters
                     DeviceId = _deviceId,
                     VerificationData = verificationData,
                     ErrorMessage = null,
-                    Width = _width,
-                    Height = _height
+                    Width = width,
+                    Height = height
                 };
             }
             catch (Exception ex)
@@ -157,6 +250,23 @@ namespace FingerprintAgent.Adapters
                 return CaptureResult.Fail("CAPTURE_FAILED", $"ZKTeco: {ex.Message}");
             }
         }
+
+        #region P/Invoke Declarations
+
+        // Direct wrapper around libzkfp.dll's blocking capture call. Bypasses the
+        // broken ZkTecoFingerPrint wrapper's parameter-106 query (see Scan() BUGFIX).
+        // Signature matches libzkfp.h ZKFPM_AcquireFingerprint.
+        // libzkfp.h declares APICALL = __stdcall on Windows, so leave CallingConvention
+        // unspecified (= Winapi → StdCall on x86). Cdecl would corrupt the stack.
+        [DllImport("libzkfp.dll")]
+        private static extern int ZKFPM_AcquireFingerprint(
+            IntPtr hDevice,
+            IntPtr fpImage,
+            uint cbFPImage,
+            IntPtr fpTemplate,
+            ref uint cbTemplate);
+
+        #endregion
 
         /// <summary>
         /// Converts a ZkResponse enum value to a human-readable string.
@@ -173,6 +283,49 @@ namespace FingerprintAgent.Adapters
                 return _zkResponseStrings[arrayIndex];
             // For enum values beyond our coverage, return raw enum name
             return response.ToString();
+        }
+
+        /// <summary>
+        /// Calls ZkTecoFingerHost.Initialize() with recovery for the well-known case
+        /// where a previous session was abandoned mid-flight (capture failed before
+        /// device was closed), leaving the native state corrupted.
+        ///
+        /// The ZKTeco SDK has a confusing response model:
+        ///   - First call: returns Ok (0) on success
+        ///   - Second call when host is already initialized: returns AlreadyInit (1)
+        ///     — IsSuccess=false but the host IS initialized, no action needed
+        ///   - After a failed/abandoned session: returns InitLibrary (-1) or Init (-2)
+        ///     — requires Close() + retry to recover
+        ///
+        /// We treat AlreadyInit as a success because the host is in the state we want.
+        /// </summary>
+        private static ZkResult<int> EnsureHostInitialized()
+        {
+            lock (_hostLock)
+            {
+                var result = ZkTecoFingerHost.Initialize();
+
+                // AlreadyInit means the host is already in a usable state.
+                if (result.IsSuccess || result.Response == ZkResponse.AlreadyInit)
+                {
+                    return result;
+                }
+
+                // InitLibrary (-1) or Init (-2): previous session was abandoned,
+                // native state is corrupted. Close() then retry once.
+                if (result.Response == ZkResponse.InitLibrary || result.Response == ZkResponse.Init)
+                {
+                    try { ZkTecoFingerHost.Close(); } catch { /* best effort */ }
+                    var retry = ZkTecoFingerHost.Initialize();
+                    if (retry.IsSuccess || retry.Response == ZkResponse.AlreadyInit)
+                    {
+                        return retry;
+                    }
+                    return retry;
+                }
+
+                return result;
+            }
         }
 
         public void Dispose()

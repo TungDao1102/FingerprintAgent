@@ -22,9 +22,25 @@ namespace FingerprintAgent.Api
         {
             _logger?.Debug(correlationId ?? AgentLogger.GenerateCorrelationId(), "Health check requested");
 
-            var inBackoff = (scanner as ScannerManager)?.InBackoff ?? false;
-            var backoffStep = (scanner as ScannerManager)?.BackoffStep ?? 0;
-            bool connected = scanner.IsConnected;
+            var mgr = scanner as ScannerManager;
+            var inBackoff = mgr?.InBackoff ?? false;
+            var backoffStep = mgr?.BackoffStep ?? 0;
+
+            bool connected;
+            string deviceId;
+            string model;
+            string vendorErrorCode;
+            if (mgr != null)
+            {
+                connected = mgr.TryProbe(out deviceId, out model, out vendorErrorCode);
+            }
+            else
+            {
+                connected = scanner.IsConnected;
+                deviceId = scanner.DeviceId;
+                model = scanner.Model;
+                vendorErrorCode = scanner.VendorErrorCode;
+            }
 
             string status = connected ? "healthy" : "degraded";
             int httpStatus = (connected || backoffStep < 3) ? 200 : 503;
@@ -32,7 +48,9 @@ namespace FingerprintAgent.Api
             var response = new
             {
                 status,
-                deviceId = scanner.DeviceId,
+                deviceId,
+                model,
+                vendorErrorCode,
                 uptime = (DateTime.UtcNow - _startTime).ToString(@"hh\:mm\:ss"),
                 inBackoff,
                 backoffStep

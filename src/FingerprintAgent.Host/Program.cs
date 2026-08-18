@@ -44,9 +44,20 @@ namespace FingerprintAgent
                     exitEvent.Set();
                 };
 
-                if (!exitEvent.WaitOne(TimeSpan.FromSeconds(10)))
+                // Wait indefinitely for Ctrl+C by default. Set FA_CONSOLE_TIMEOUT (seconds)
+                // for CI smoke tests that need auto-shutdown; 0 or negative = infinite.
+                int consoleTimeoutSec = 0;
+                var envTimeout = Environment.GetEnvironmentVariable("FA_CONSOLE_TIMEOUT");
+                if (!string.IsNullOrEmpty(envTimeout) && int.TryParse(envTimeout, out var t))
+                    consoleTimeoutSec = t;
+
+                TimeSpan timeout = consoleTimeoutSec > 0
+                    ? TimeSpan.FromSeconds(consoleTimeoutSec)
+                    : Timeout.InfiniteTimeSpan;
+
+                if (!exitEvent.WaitOne(timeout))
                 {
-                    Console.WriteLine("Shutdown timed out, forcing exit...");
+                    Console.WriteLine($"Shutdown timed out after {consoleTimeoutSec}s, forcing exit...");
                 }
 
                 Console.WriteLine("Service stopped.");

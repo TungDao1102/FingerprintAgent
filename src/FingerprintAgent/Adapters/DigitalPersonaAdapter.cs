@@ -104,8 +104,17 @@ namespace FingerprintAgent.Adapters
                 return CaptureResult.Fail("CAPTURE_ERROR", $"DigitalPersona:{_vendorErrorCode}");
             }
 
-            bool signaled = waitHandle.WaitOne(3000);
-            _capture.StopCapture();
+            bool signaled;
+            try
+            {
+                signaled = waitHandle.WaitOne(3000);
+            }
+            finally
+            {
+                // Always stop capture — even if timeout occurred or exception was thrown.
+                // DPUruNet's StartCapture/StopCapture must be paired per call.
+                _capture.StopCapture();
+            }
 
             if (!signaled || _capturedSample == null)
             {
