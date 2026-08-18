@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
@@ -166,15 +167,21 @@ namespace FingerprintAgent.Adapters
                     // ZKFPM_AcquireFingerprint directly with width*height buffer. We do the same
                     // here — keep the wrapper for OpenDevice (works), bypass for capture.
                     //
-                    // ROLLING-CAPTURE (D-14): SDK's ZKFPM_AcquireFingerprint has ~2s internal
-                    // timeout — too short for UX where user clicks button then reaches for scanner.
-                    // Retry on ERROR_CAPTURE only; 3×~2.1s = 6s total wait window.
-                    const int maxAttempts = 3;
+                    // ROLLING-CAPTURE (D-14, D-16): SDK's ZKFPM_AcquireFingerprint on ZK9500
+                    // blocks for ~1s before returning ERROR_CAPTURE (-8) when no finger is
+                    // present — too short for UX where user clicks button then reaches for
+                    // scanner (typical 5-10s end-to-end). Retry on ERROR_CAPTURE only,
+                    // while total elapsed time is below budget. Budget = 8s (under
+                    // ScannerManager's 10s total). Note: ScannerManager's per-adapter
+                    // adapterCts is dead code (CTS never passed to adapter.Scan()), so
+                    // each adapter must self-manage its capture window.
+                    const int captureBudgetMs = 8000;
                     const int retryDelayMs = 100;
                     int ret = -1;
                     ZkResponse err = ZkResponse.Capture;
+                    var stopwatch = Stopwatch.StartNew();
 
-                    for (int attempt = 1; attempt <= maxAttempts; attempt++)
+                    do
                     {
                         ret = ZKFPM_AcquireFingerprint(
                             _device.Handle,
@@ -194,15 +201,18 @@ namespace FingerprintAgent.Adapters
                                 $"ZKTeco: capture failed ({ZkResponseToString(err)})");
                         }
 
-                        if (attempt < maxAttempts)
-                            Thread.Sleep(retryDelayMs);
-                    }
+                        if (stopwatch.ElapsedMilliseconds >= captureBudgetMs)
+                            break;
+
+                        Thread.Sleep(retryDelayMs);
+                    } while (stopwatch.ElapsedMilliseconds < captureBudgetMs);
 
                     if (ret != 0)
                     {
                         _vendorErrorCode = ZkResponseToString(err);
+                        int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
                         return CaptureResult.Fail("CAPTURE_FAILED",
-                            $"ZKTeco: no finger detected within {maxAttempts * retryDelayMs / 1000}s");
+                            $"ZKTeco: no finger detected within {elapsedSec}s");
                     }
 
                     Marshal.Copy(imagePtr, imageBuffer, 0, imageSize);
