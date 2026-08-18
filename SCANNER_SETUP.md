@@ -18,7 +18,7 @@ ZK4500, ZK6500, ZK7500, ZK8500, ZK8500R, ZK9500, SLK20R, SLK20M
 ### NuGet Package
 The `ZkTecoFingerPrint` NuGet (MIT, v1.2.1, ~13-star GitHub project) wraps the native DLLs and provides a sane async C# API.
 
-**Supply-chain note:** This is a small open-source project. Pin to exact version `1.2.1` in `FingerprintAgent.csproj`. If the package is abandoned or compromised, fall back to the raw `zkfp2` P/Invoke documented in `.planning/phases/02-multi-vendor-scanner-adapters/02-RESEARCH.md` §5 Option A.
+**Supply-chain note:** This is a small open-source project. Pin to exact version `1.2.1` in `FingerprintAgent.csproj`. The wrapper exposes two overloads of `AcquireFingerprintAsync`; `ZKTecoAdapter` uses the buffer-overload (`AcquireFingerprintAsync(byte[], CancellationToken)`) to avoid the parameter-106 query that fails on ZK9500 firmware. If the package is ever abandoned, the raw `zkfp2` P/Invoke path documented in `.planning/phases/02-multi-vendor-scanner-adapters/02-RESEARCH.md` §5 Option A remains a viable fallback.
 
 ### Setup Steps
 1. Ensure ZKFinger SDK is installed and the ZKTeco device USB driver is loaded
@@ -33,10 +33,10 @@ On some driver versions, `GetDeviceCount()` may return 0 immediately after `Init
 ZKTeco returns 8-bit conventional grayscale (0=white, 255=dark ridges). NO pixel inversion needed — this is different from Futronic which requires inversion.
 
 ### Timeout Behavior
-`AcquireFingerprintAsync` has no built-in timeout. The ScannerManager enforces a 10-second total budget (D-06) and ~3 seconds per adapter (D-11). The ZKTecoAdapter carries an internal 5-second safety-net deadline as a defence-in-depth measure. If no finger is placed before the timeout, ZKTecoAdapter returns `CAPTURE_TIMEOUT`.
+The underlying `ZKFPM_AcquireFingerprint` call has an internal ~1s timeout per attempt. ZKTecoAdapter retries on `ERROR_CAPTURE` while elapsed time is below an 8-second adapter budget (under ScannerManager's 10s total, D-06). Total user-visible wait window is ~8 seconds — enough time for "click button → reach for scanner → place finger".
 
 ### ZKTeco Fallback (if NuGet is unavailable)
-If `ZkTecoFingerPrint` NuGet cannot be used, implement the raw `zkfp2` P/Invoke as documented in `02-RESEARCH.md` §5 Option A. Replace the `ZkTecoFingerPrint` NuGet call in `ZKTecoAdapter.cs` with direct DllImport declarations for `ZKFPM_Init`, `ZKFPM_GetDeviceCount`, `ZKFPM_OpenDevice`, and `ZKFPM_AcquireFingerprint`.
+If `ZkTecoFingerPrint` NuGet cannot be used, implement the raw `zkfp2` P/Invoke as documented in `02-RESEARCH.md` §5 Option A. Replace the `ZkTecoFingerPrint` NuGet calls in `ZKTecoAdapter.cs` with direct DllImport declarations for `ZKFPM_Init`, `ZKFPM_GetDeviceCount`, `ZKFPM_OpenDevice`, `ZKFPM_CloseDevice`, and `ZKFPM_AcquireFingerprint`. This path was previously used in commit `4c7c358` based on a misdiagnosis that the wrapper had a bug; the actual issue was calling the parameterless overload of `AcquireFingerprintAsync` (which queries parameter 106, unimplemented on ZK9500).
 
 ---
 
