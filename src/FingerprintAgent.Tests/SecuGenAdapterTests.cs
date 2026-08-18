@@ -1,4 +1,5 @@
 using System;
+using FingerprintAgent.Adapters;
 using Xunit;
 
 namespace FingerprintAgent.Tests
