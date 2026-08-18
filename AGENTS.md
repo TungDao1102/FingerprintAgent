@@ -59,13 +59,16 @@ HTTP POST /api/capture
     → CorsMiddleware.ApplyCorsHeaders()
     → CaptureHandler.Handle(context, _scanner, correlationId)
       → JsonConvert.DeserializeObject<CaptureRequest>(body)
-      → _scanner.Scan()        // _scanner = ScannerManager
-        → ScannerManager → ActiveAdapter (first healthy in priority list)
-          → [VendorAdapter].Scan()
+      → vendorErrorCode snapshot
+      → _scanner.Scan(ct)        // _scanner = ScannerManager; ct = per-adapter 3s CTS
+        → ScannerManager → priority fallback (continue on scan failure per D-12)
+          → adapter.Scan(adapterCts.Token)
         → CaptureResult (imageBytes, verificationData, mimeType)
       → JsonConvert.SerializeObject(CaptureResponse)
   → HTTP 200 + JSON
 ```
+
+**Priority fallback (D-12):** `ScannerManager` iterates adapters in priority order. If one adapter's `Scan()` returns failure (e.g., `CAPTURE_FAILED` for no-finger), the manager **continues to the next adapter** rather than failing fast — this allows multi-vendor environments where one flaky adapter shouldn't break capture. Only when all adapters fail does `Scan()` return `SCANNER_NOT_CONNECTED`.
 
 **Error code → HTTP status mapping:**
 | `CaptureResult.ErrorCode` | HTTP Status |

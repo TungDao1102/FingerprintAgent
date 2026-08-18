@@ -32,8 +32,24 @@ On some driver versions, `GetDeviceCount()` may return 0 immediately after `Init
 ### Image Format
 ZKTeco returns 8-bit conventional grayscale (0=white, 255=dark ridges). NO pixel inversion needed — this is different from Futronic which requires inversion.
 
+The `ZKTecoAdapter.Scan()` method encodes PNG directly from the raw 8-bit grayscale pixel buffer (which `AcquireFingerprintAsync(byte[], ...)` writes into the caller's buffer). It bypasses the wrapper's `BitmapFormat.GetBitmap()` step (which constructs a BMP file) and the `System.Drawing.Bitmap` decode/re-encode — saving 2 allocations and 1 BMP parse per capture.
+
 ### Timeout Behavior
-The underlying `ZKFPM_AcquireFingerprint` call has an internal ~1s timeout per attempt. ZKTecoAdapter retries on `ERROR_CAPTURE` while elapsed time is below an 8-second adapter budget (under ScannerManager's 10s total, D-06). Total user-visible wait window is ~8 seconds — enough time for "click button → reach for scanner → place finger".
+The underlying `ZKFPM_AcquireFingerprint` call has an internal ~1s timeout per attempt. ZKTecoAdapter retries on `ERROR_CAPTURE` while elapsed time is below a 15-second adapter budget. Total user-visible wait window is ~15 seconds — enough time for "click button → reach for scanner → place finger".
+
+### Cancellation
+`Scan()` honors `CancellationToken` at the next retry checkpoint. The token is propagated by `ScannerManager`'s per-adapter 3s budget (D-06), so a hung blocking call will be cancelled at the next retry.
+
+### Error Mapping
+`ZkResponse` enum values (29 total) map to user-actionable messages in `CaptureResult.ErrorMessage`:
+- `Capture` → "no finger detected within Xs — please place finger on sensor"
+- `Busy` → "scanner is busy with another operation"
+- `Timeout` → "capture timed out"
+- `InvalidHandle` → "device handle invalidated — please retry, scanner will reinitialize"
+- `NoDevice` → "no scanner detected — check USB connection"
+- (etc.)
+
+The raw `ZkResponse` string (e.g., `ERROR_CAPTURE`) is preserved in `VendorErrorCode` for IT debugging.
 
 ### ZKTeco Fallback (if NuGet is unavailable)
 If `ZkTecoFingerPrint` NuGet cannot be used, implement the raw `zkfp2` P/Invoke as documented in `02-RESEARCH.md` §5 Option A. Replace the `ZkTecoFingerPrint` NuGet calls in `ZKTecoAdapter.cs` with direct DllImport declarations for `ZKFPM_Init`, `ZKFPM_GetDeviceCount`, `ZKFPM_OpenDevice`, `ZKFPM_CloseDevice`, and `ZKFPM_AcquireFingerprint`. This path was previously used in commit `4c7c358` based on a misdiagnosis that the wrapper had a bug; the actual issue was calling the parameterless overload of `AcquireFingerprintAsync` (which queries parameter 106, unimplemented on ZK9500).
@@ -149,6 +165,10 @@ Copy `ftrScanAPI.dll` to the same folder as `FingerprintAgent.exe` per D-08.
 `config.json` → `Scanner.Priority: ["SecuGen", "DigitalPersona", "Futronic", "ZKTeco"]`
 
 ScannerManager tries adapters in this order on each `/api/capture` call, with the first successful scan winning. If all fail, returns `SCANNER_NOT_CONNECTED`.
+
+### Timeout Strategy
+- **Total budget**: 20 seconds (D-06, extended from 10s to accommodate ZK9500's full rolling-capture window).
+- **Per-adapter budget**: NOT enforced by ScannerManager. Each adapter manages its own internal timeout (e.g., ZKTecoAdapter uses 15s rolling-capture). Per D-13, timeout enforcement is centralized — ScannerManager enforces the total budget via `CancellationTokenSource.CancelAfter(20s)`; individual adapters decide how to use the passed token at their own checkpoints.
 
 ### MockMode
 Set `config.Scanner.MockMode: true` to bypass all real scanners and use `MockScannerAdapter` for development/testing without hardware.
