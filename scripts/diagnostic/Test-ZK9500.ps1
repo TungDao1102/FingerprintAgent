@@ -174,7 +174,8 @@ if (-not $SkipHealth) {
     Write-Section "T1: Health endpoint check"
     $health = Get-Health
     if ($health) {
-        Write-Host ("  status      = {0}" -f $health.status) -ForegroundColor (if ($health.status -eq 'healthy') { 'Green' } else { 'Yellow' })
+        $statusColor = if ($health.status -eq 'healthy') { 'Green' } else { 'Yellow' }
+        Write-Host ("  status      = {0}" -f $health.status) -ForegroundColor $statusColor
         Write-Host ("  deviceId    = {0}" -f $health.deviceId)
         Write-Host ("  uptime      = {0}" -f $health.uptime)
         Write-Host ("  inBackoff   = {0}" -f $health.inBackoff)

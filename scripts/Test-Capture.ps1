@@ -60,6 +60,6 @@ Write-Host "verificationData: $($capture.verificationData)"
 
 if ($SaveImage -and $capture.imageBytes) {
     $imagePath = Join-Path $env:TEMP "fingerprint-capture.png"
-    [Convert]::FromBase64String($capture.imageBytes) | Set-Content -Path $imagePath -Encoding Byte
+    [System.IO.File]::WriteAllBytes($imagePath, [Convert]::FromBase64String($capture.imageBytes))
     Write-Host "`nImage saved to: $imagePath"
 }
