@@ -8,7 +8,8 @@ namespace FingerprintAgent.Adapters
 {
     /// <summary>
     /// Composite IScannerAdapter that tries multiple adapters in priority order
-    /// until one succeeds. Handles 10-second total timeout (D-06) and per-adapter
+    /// until one succeeds. Handles 20-second total timeout (D-06, extended to give
+    /// the active adapter's full rolling-capture window on ZK9500) and per-adapter
     /// ~3-second timeout via linked CancellationTokenSource.
     ///
     /// SCAN-06 backoff: if the previously-active adapter reports IsConnected=false
@@ -265,7 +266,8 @@ namespace FingerprintAgent.Adapters
         /// SCAN-06 backoff: if _activeAdapter is set but reports IsConnected=false,
         /// retry Initialize() once before falling through to normal priority fallback.
         ///
-        /// Total budget: 10 seconds across all adapter attempts (D-06).
+        /// Total budget: 20 seconds across all adapter attempts (D-06, extended to
+        /// accommodate the active adapter's full rolling-capture window on ZK9500).
         /// Per-adapter budget: ~3 seconds via linked CTS (D-06).
         /// </summary>
         public CaptureResult Scan()
@@ -306,10 +308,10 @@ namespace FingerprintAgent.Adapters
                 }
             }
 
-            // 10-second total budget (D-06)
+            // 20-second total budget (D-06)
             using (var totalCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token))
             {
-                totalCts.CancelAfter(TimeSpan.FromSeconds(10));
+                totalCts.CancelAfter(TimeSpan.FromSeconds(20));
 
                 IScannerAdapter[] currentAdapters;
                 lock (_adapterLock) { currentAdapters = _adapters; }
@@ -318,7 +320,7 @@ namespace FingerprintAgent.Adapters
                     if (totalCts.Token.IsCancellationRequested)
                     {
                         _logger?.Warn(null, "ScannerManager: total timeout exceeded");
-                        return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture timed out after 10 seconds across all adapters");
+                        return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture timed out after 20 seconds across all adapters");
                     }
 
                     // ~3 second per-adapter budget (D-06)

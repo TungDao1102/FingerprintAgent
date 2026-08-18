@@ -69,7 +69,7 @@ namespace FingerprintAgent.Tests
                 return;
             }
 
-            Console.WriteLine("[ZKTeco] Place your finger on the scanner within 10 seconds...");
+            Console.WriteLine("[ZKTeco] Place your finger on the scanner within 15 seconds...");
             var result = adapter.Scan();
 
             if (result.IsSuccess)

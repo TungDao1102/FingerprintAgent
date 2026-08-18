@@ -158,7 +158,7 @@ namespace FingerprintAgent.Adapters
 
                 byte[] imageBuffer = new byte[width * height];
 
-                const int captureBudgetMs = 8000;
+                const int captureBudgetMs = 15000;
                 const int retryDelayMs = 100;
                 var stopwatch = Stopwatch.StartNew();
                 ZkResult<ZkFingerPrintResult?>? lastResult = null;
