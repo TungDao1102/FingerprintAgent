@@ -1,15 +1,102 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Microsoft.Extensions.Configuration;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace FingerprintAgent.Configuration
 {
     public static class ConfigLoader
     {
+        public static readonly string ProgramDataDirectory =
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                "FingerprintAgent");
+
+        public static readonly string ProgramDataConfigPath =
+            Path.Combine(ProgramDataDirectory, "config.json");
+
+        /// <summary>
+        /// Default production entry point. Resolves paths via the constants above
+        /// (ProgramDataConfigPath + install-dir config.template.json) and applies
+        /// the smart-merge logic per D-33/D-34/D-35/D-36.
+        /// </summary>
         public static AgentConfig Load()
         {
-            string basePath = AppDomain.CurrentDomain.BaseDirectory;
-            return LoadFromDirectory(basePath);
+            string installDir = AppDomain.CurrentDomain.BaseDirectory;
+            string templatePath = Path.Combine(installDir, "config.template.json");
+            return Load(ProgramDataConfigPath, templatePath, installDir);
+        }
+
+        /// <summary>
+        /// Test-friendly overload: lets callers specify ProgramData + template paths
+        /// without touching the real %ProgramData% directory.
+        /// </summary>
+        public static AgentConfig Load(string programDataConfigPath, string templatePath, string installDir)
+        {
+            bool hasProgramData = File.Exists(programDataConfigPath);
+            bool hasTemplate = File.Exists(templatePath);
+
+            // Case 1: first install (no ProgramData config yet) — seed from template
+            //         or copy legacy install-dir config.json if present.
+            if (!hasProgramData && hasTemplate)
+            {
+                EnsureProgramDataDirectory(programDataConfigPath);
+
+                string legacyConfigPath = Path.Combine(installDir, "config.json");
+                if (File.Exists(legacyConfigPath))
+                {
+                    // Legacy v1.0 install: copy user-customized config to ProgramData
+                    // so IT customizations survive the upgrade.
+                    File.Copy(legacyConfigPath, programDataConfigPath);
+                }
+                else
+                {
+                    File.Copy(templatePath, programDataConfigPath);
+                }
+
+                return LoadFromFile(programDataConfigPath);
+            }
+
+            // Case 2: upgrade — smart merge template → ProgramData user config.
+            if (hasProgramData && hasTemplate)
+            {
+                try
+                {
+                    var userJson = JObject.Parse(File.ReadAllText(programDataConfigPath));
+                    var templateJson = JObject.Parse(File.ReadAllText(templatePath));
+                    var (_, addedKeys) = ConfigMerger.Merge(userJson, templateJson);
+
+                    if (addedKeys.Count > 0)
+                    {
+                        File.WriteAllText(
+                            programDataConfigPath,
+                            userJson.ToString(Formatting.Indented));
+
+                        WriteMergeLog(programDataConfigPath, addedKeys);
+                    }
+                }
+                catch (Exception ex) when (
+                    ex is IOException ||
+                    ex is UnauthorizedAccessException ||
+                    ex is JsonReaderException ||
+                    ex is JsonException)
+                {
+                    // D-08 carryover: keep old config, don't crash. The exception
+                    // bubbles only for unexpected types; for the expected ones we
+                    // log via the caller's logger if present and proceed with the
+                    // existing ProgramData config.
+                    System.Diagnostics.Debug.WriteLine(
+                        $"[FingerprintAgent] ConfigMerger skipped: {ex.Message}");
+                }
+
+                return LoadFromFile(programDataConfigPath);
+            }
+
+            // Case 3: no ProgramData config and no template — fall back to install-dir
+            //         config.json (dev workflow without MSI).
+            return LoadFromDirectory(installDir);
         }
 
         public static AgentConfig LoadFromDirectory(string directoryPath)
@@ -30,11 +117,18 @@ namespace FingerprintAgent.Configuration
                     configPath);
             }
 
+            return LoadFromFile(configPath);
+        }
+
+        private static AgentConfig LoadFromFile(string configPath)
+        {
+            string directoryPath = Path.GetDirectoryName(configPath);
+
             try
             {
                 var config = new ConfigurationBuilder()
                     .SetBasePath(directoryPath)
-                    .AddJsonFile("config.json", optional: false, reloadOnChange: false)
+                    .AddJsonFile(Path.GetFileName(configPath), optional: false, reloadOnChange: false)
                     .Build();
 
                 return BindConfig(config);
@@ -57,6 +151,42 @@ namespace FingerprintAgent.Configuration
                     $"config.json at {configPath} contains invalid JSON. " +
                     $"Please verify the file is valid JSON.",
                     ex);
+            }
+        }
+
+        private static void EnsureProgramDataDirectory(string programDataConfigPath)
+        {
+            var dir = Path.GetDirectoryName(programDataConfigPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+        }
+
+        private static void WriteMergeLog(string programDataConfigPath, IReadOnlyList<string> addedKeys)
+        {
+            var logPath = Path.Combine(
+                Path.GetDirectoryName(programDataConfigPath) ?? ProgramDataDirectory,
+                "merge.log");
+
+            try
+            {
+                var lines = new List<string>
+                {
+                    $"{DateTime.UtcNow:O} Config merged from template → user config",
+                    "Added:"
+                };
+                foreach (var key in addedKeys)
+                {
+                    lines.Add($"  + {key}");
+                }
+                File.AppendAllLines(logPath, lines);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                // Best-effort: don't fail the merge if we can't write the log
+                System.Diagnostics.Debug.WriteLine(
+                    $"[FingerprintAgent] merge.log write skipped: {ex.Message}");
             }
         }
 
@@ -89,6 +219,12 @@ namespace FingerprintAgent.Configuration
 
             // Security section
             config.Security.BindIp = GetString(configuration, "security:bindIp") ?? config.Security.BindIp;
+
+            // Update section (Phase 4 D-13/D-14/D-15)
+            config.Update.Enabled = GetBool(configuration, "update:enabled") ?? config.Update.Enabled;
+            config.Update.GitHubOwner = GetString(configuration, "update:githubOwner") ?? config.Update.GitHubOwner;
+            config.Update.GitHubRepo = GetString(configuration, "update:githubRepo") ?? config.Update.GitHubRepo;
+            config.Update.CheckIntervalHours = GetInt(configuration, "update:checkIntervalHours") ?? config.Update.CheckIntervalHours;
 
             return config;
         }
@@ -135,7 +271,7 @@ namespace FingerprintAgent.Configuration
                 if (items == null)
                     return null;
 
-                var list = new System.Collections.Generic.List<string>();
+                var list = new List<string>();
                 foreach (var item in items)
                 {
                     if (item.Value != null)
