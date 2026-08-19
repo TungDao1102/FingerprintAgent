@@ -9,7 +9,7 @@ FingerprintAgent/                          ← git root
 ├── .codegraph/                            ← codegraph knowledge-graph index (SQLite) — dev-only, gitignored
 ├── .omo/                                  ← opencode session/continuation state — dev-only, gitignored
 ├── .planning/                             ← GSD workflow artifacts
-│   ├── codebase/                          ← this document + others (ARCHITECTURE.md, etc.)
+│   ├── codebase/                          ← this document + others (ARCHITECTURE.md, etc.) — single source of truth
 │   ├── debug/                             ← gsd-debug state files
 │   ├── phases/                            ← per-phase CONTEXT/PLAN/SUMMARY
 │   ├── PROJECT.md                         ← project charter
@@ -17,11 +17,6 @@ FingerprintAgent/                          ← git root
 │   ├── ROADMAP.md
 │   ├── STATE.md
 │   └── config.json
-├── docs/                                  ← design-time documentation (kept for reference; current ARCHITECTURE.md in .planning/codebase/)
-│   ├── ARCHITECTURE.md
-│   ├── DEVICE-COMPATIBILITY.md
-│   ├── PROJECT.md
-│   └── REQUIREMENTS.md
 ├── lib/                                   ← vendor SDK native DLLs (committed only if downloaded via Setup-VendorSdk.ps1)
 │   └── ZkTeco/
 │       ├── libzkfp.dll
@@ -275,11 +270,6 @@ FingerprintAgent/                          ← git root
 - Purpose: xUnit test runner output
 - Generated: Yes (`dotnet test`)
 - Committed: No
-
-**`docs/`:**
-- Purpose: Design-time documentation (originally the architecture source-of-truth; predates `.planning/codebase/`)
-- Generated: No
-- Committed: Yes — but largely superseded by `.planning/codebase/ARCHITECTURE.md`. The `docs/ARCHITECTURE.md` references Kestrel/OWIN which are no longer accurate (actual code uses `HttpListener`); treat as historical design notes, not current ground truth
 
 **`lib/<Vendor>/`:**
 - Purpose: Vendor native SDK DLLs
