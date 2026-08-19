@@ -1,0 +1,143 @@
+<?xml version="1.0"?>
+<!--
+  FingerprintAgent.Installer.wxs — Product definition (root .wxs).
+
+  CONTEXT
+    - WiX 3.x .wxs source compiled with candle.exe -> light.exe -> FingerprintAgent-Setup.msi.
+    - ProductCode and UpgradeCode are FIXED GUIDs (not Id="*").
+        ProductCode  = FF16181A-F127-4ED9-921B-D69E05AB70B7
+          - CAN change on MAJOR version bumps (1.x -> 2.x) but stays fixed within v1.x.
+        UpgradeCode  = E00CD299-9D25-46A2-837B-226177F20210
+          - MUST stay fixed across all v1.x versions for <MajorUpgrade> to find prior installs.
+    - Generated once via [guid]::NewGuid() in PowerShell; documented in DEPLOYMENT.md.
+
+  STRUCTURE
+    - This file declares the Product, MajorUpgrade, MediaTemplate, Feature, UIRef, Properties.
+    - ComponentGroups live under Components/ (Service.wxs, ProgramDataConfig.wxs, CustomActions.wxs, UninstallBehavior.wxs).
+    - Localized dialogs live under Dialogs/.
+
+  DECISIONS (D-XX) referenced from .planning/phases/04/04-CONTEXT.md:
+    D-03 MajorUpgrade Schedule="afterInstallExecute" AllowSameVersionUpgrades="yes" AllowDowngrades="no"
+    D-04 Hard-coded install path (no WixUI_InstallDir / no install-dir picker)
+    D-08 msiexec /qn silent support via WixUI_Minimal
+    D-18 ARPURLUPDATEINFO points to GitHub releases page (Update verb -> browser flow, v1)
+    D-19 ServiceInstall + util:ServiceConfig for failure actions
+    D-30 30s graceful service stop before upgrade via <ServiceControl Stop="both" Wait="yes" Timeout="30" />
+    D-38 /health probe triggers Success / Degraded / GenericError dialog
+    D-39 InstallType property drives fresh-vs-upgrade dialog
+    D-40 ProductVersion from MSBuild $(Version) property (set from CI tag)
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <?define ProductCode = "FF16181A-F127-4ED9-921B-D69E05AB70B7" ?>
+  <?define UpgradeCode = "E00CD299-9D25-46A2-837B-226177F20210" ?>
+
+  <Product Id="$(var.ProductCode)"
+           Name="Fingerprint Agent"
+           Version="$(var.Version)"
+           Manufacturer="FingerprintAgent"
+           UpgradeCode="$(var.UpgradeCode)"
+           Language="1033"
+           Codepage="1252">
+
+    <Package Id="*"
+             Description="Fingerprint Agent installer (HIS-compatible local capture service)"
+             Comments="Installs the FingerprintAgent Windows service with HTTP API on localhost:5043"
+             Manufacturer="FingerprintAgent"
+             InstallerVersion="500"
+             Compressed="yes"
+             InstallScope="perMachine"
+             Platform="x86" />
+
+    <!-- D-03: smooth in-place upgrade with same-version re-install support -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  AllowDowngrades="no"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed."
+                  Schedule="afterInstallExecute" />
+
+    <!-- D-04: hard-coded install paths -->
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- CustomActionData properties consumed by SeedProgramDataConfig CA -->
+    <Property Id="INSTALLFOLDER" Value="C:\Program Files\FingerprintAgent" />
+    <Property Id="PROGRAMDATAFOLDER" Value="C:\ProgramData\FingerprintAgent" />
+    <Property Id="InstallTemplatePath" Value="[INSTALLFOLDER]config.template.json" />
+    <Property Id="ProgramDataConfigPath" Value="[PROGRAMDATAFOLDER]config.json" />
+
+    <!-- D-29: REMOVE_LOGS property; default empty (=preserve logs on uninstall) -->
+    <Property Id="REMOVE_LOGS" Secure="yes" />
+
+    <!-- D-18: Programs and Features links -->
+    <Property Id="ARPHELPLINK" Value="https://github.com/YOUR-ORG/FingerprintAgent" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/YOUR-ORG/FingerprintAgent/releases" />
+    <!-- Hide Repair verb for v1 (Phase 5+ can re-enable if needed) -->
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!-- Feature tree: aggregate all ComponentGroups -->
+    <Feature Id="ProductFeature"
+             Title="Fingerprint Agent"
+             Description="Local fingerprint capture service for HIS SaaS web apps"
+             Level="1"
+             Absent="disallow">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ServiceComponents" />
+      <ComponentGroupRef Id="ProgramDataComponents" />
+      <ComponentRef Id="EventLogSource" />
+    </Feature>
+
+    <!-- D-08: minimal UI supporting msiexec /qn silent install -->
+    <UIRef Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="" />
+
+    <!-- Custom Action sequence (D-38: DetectInstallType early; CheckVcRedist fail-fast; etc.) -->
+    <InstallExecuteSequence>
+      <!-- 1. DetectInstallType (always first — informational, sets InstallType property) -->
+      <Custom Action="DetectInstallType" Before="AppSearch"><![CDATA[NOT Installed]]></Custom>
+
+      <!-- 2. CheckVcRedist (fail-fast before any file copy if VC++ missing) -->
+      <Custom Action="CheckVcRedist" Before="InstallValidate"><![CDATA[NOT Installed]]></Custom>
+
+      <!-- 3. StopRunningService (graceful stop on upgrade, 30s timeout) -->
+      <Custom Action="StopRunningService" Before="InstallFiles"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
+
+      <!-- 4. InstallFiles (standard MSI action — installs files copied from .wxs) -->
+
+      <!-- 5. SeedProgramDataConfig (after files installed, before service start) -->
+      <Custom Action="SeedProgramDataConfig" After="InstallFiles"><![CDATA[NOT REMOVE]]></Custom>
+
+      <!-- 6. StartServices (WiX standard action — handled by ServiceControl Start attribute) -->
+
+      <!-- 7. ProbeHealthAfterInstall (after StartServices, before Commit) -->
+      <Custom Action="ProbeHealthAfterInstall" After="StartServices"><![CDATA[NOT REMOVE]]></Custom>
+
+      <!-- 8. Commit (standard MSI) -->
+    </InstallExecuteSequence>
+
+    <!-- UI sequence for Vietnamese error dialog display during interactive install -->
+    <InstallUISequence>
+      <Custom Action="DetectInstallType" Before="AppSearch"><![CDATA[NOT Installed]]></Custom>
+    </InstallUISequence>
+
+    <!-- ComponentGroupRef declarations pulled in from Components/*.wxs -->
+    <DirectoryRef Id="INSTALLFOLDER">
+      <ComponentGroupRef Id="ProductComponents" />
+    </DirectoryRef>
+
+    <!--
+      Directory tree. INSTALLFOLDER is referenced by Components/Service.wxs.
+      PROGRAMDATAFOLDER is referenced by Components/ProgramDataConfig.wxs.
+    -->
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="FingerprintAgent" />
+      </Directory>
+      <Directory Id="CommonAppDataFolder">
+        <Directory Id="PROGRAMDATAFOLDER" Name="FingerprintAgent">
+          <Directory Id="LOGS_DIR_PLACEHOLDER" Name="Logs" />
+        </Directory>
+      </Directory>
+    </Directory>
+
+  </Product>
+</Wix>

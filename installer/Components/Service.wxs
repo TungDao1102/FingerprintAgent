@@ -1,0 +1,79 @@
+<?xml version="1.0"?>
+<!--
+  Service.wxs — service installation + binary files for FingerprintAgent.Host.exe.
+
+  DECISIONS
+    D-04  Hard-coded install path: C:\Program Files\FingerprintAgent
+    D-19  <ServiceInstall> with Start=auto, Account=LocalSystem, Vital=yes
+          + util:ServiceConfig with restart failure actions (matches Install-Service.ps1)
+    D-30  <ServiceControl> graceful 30s stop on upgrade (Stop="both" Wait="yes" Timeout="30")
+    D-32a Vendor SDK DLLs NOT bundled — production workstations install vendor drivers
+          separately; only first-party binaries ship in the MSI.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+
+      <!-- Binaries shipped with MSI (first-party only; no vendor DLLs per D-32a) -->
+      <Component Id="cmp_Binaries" Guid="{B5A2C3D1-7E4F-4A2B-9C8D-1E2F3A4B5C6D}" Win64="no">
+        <File Id="fil_AgentExe"
+              Source="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.exe"
+              KeyPath="yes"
+              Checksum="yes" />
+        <File Id="fil_AgentLibrary"
+              Source="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.Library.dll" />
+        <File Id="fil_NewtonsoftJson"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Newtonsoft.Json.dll" />
+        <File Id="fil_ConfigTemplate"
+              Source="$(var.FingerprintAgent.Host.TargetDir)config.template.json" />
+      </Component>
+
+      <!-- Service registration via WiX (D-19) -->
+      <Component Id="cmp_Service" Guid="{C1D2E3F4-5A6B-7C8D-9E0F-1A2B3C4D5E6F}" Win64="no">
+        <CreateFolder />
+        <util:EventSource Name="FingerprintAgent"
+                          EventLogFile="Application"
+                          CategoryMessageFile="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.exe"
+                          SupportsErrors="yes"
+                          SupportsInformationals="yes"
+                          SupportsWarnings="yes" />
+
+        <ServiceInstall Id="svc_FingerprintAgent"
+                        Name="FingerprintAgent"
+                        DisplayName="Fingerprint Agent"
+                        Description="Local fingerprint capture service providing HTTP API for web applications"
+                        Type="ownProcess"
+                        Start="auto"
+                        Account="LocalSystem"
+                        ErrorControl="normal"
+                        Vital="yes"
+                        Arguments="--service">
+          <util:ServiceConfig
+              FirstFailureActionType="restart"
+              SecondFailureActionType="restart"
+              ThirdFailureActionType="restart"
+              RestartServiceDelayInSeconds="5"
+              ResetPeriodInDays="1" />
+        </ServiceInstall>
+
+        <!-- D-30: graceful 30s stop on upgrade -->
+        <ServiceControl Id="svc_FingerprintAgent_Control"
+                        Name="FingerprintAgent"
+                        Start="install"
+                        Stop="both"
+                        Wait="yes"
+                        Timeout="30"
+                        Remove="uninstall" />
+      </Component>
+
+    </DirectoryRef>
+
+    <ComponentGroup Id="ServiceComponents">
+      <ComponentRef Id="cmp_Binaries" />
+      <ComponentRef Id="cmp_Service" />
+    </ComponentGroup>
+
+  </Fragment>
+</Wix>

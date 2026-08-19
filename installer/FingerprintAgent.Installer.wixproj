@@ -1,0 +1,60 @@
+<Project Sdk="WixToolset.Sdk/3.14.0">
+  <PropertyGroup>
+    <!-- Output MSI filename. The CI workflow renames/uploads this as the release asset. -->
+    <OutputName>FingerprintAgent-Setup</OutputName>
+    <OutputType>Package</OutputType>
+    <!-- MSI is unsigned in v1 (D-07). SignTool wired up in Phase 5+. -->
+    <SignOutput>false</SignOutput>
+    <!-- x86 only — agent is x86 only (net48 + PlatformTarget=x86). -->
+    <Platform>x86</Platform>
+    <Cultures>en-US;vi-VN</Cultures>
+    <!-- Localization: en-US is default; vi-VN overrides via Dialogs/WixUI_Minimal.vi-VN.wxl -->
+    <BindFiles>true</BindFiles>
+    <!-- Don't fail the build on missing cab/heat warnings during dev. -->
+    <SuppressValidation>true</SuppressValidation>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      D-40: MSI ProductVersion from MSBuild property. CI workflow sets this from
+      the git tag (e.g., v1.0.0 -> 1.0.0). Local dev defaults to 0.1.0.
+    -->
+    <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <DefineConstants>$(DefineConstants);Version=$(Version)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Top-level WiX .wxs files. The ComponentGroupRef inside these pulls in the
+      <Fragment>s from Components/*.wxs.
+    -->
+    <Content Include="FingerprintAgent.Installer.wxs" />
+    <Content Include="Components\Service.wxs" />
+    <Content Include="Components\ProgramDataConfig.wxs" />
+    <Content Include="Components\CustomActions.wxs" />
+    <Content Include="Components\UninstallBehavior.wxs" />
+    <Content Include="Dialogs\VcRedistError.wxs" />
+
+    <!-- Localized string table (WixUI Vietnamese) -->
+    <Content Include="Dialogs\WixUI_Minimal.vi-VN.wxl">
+      <WixLocalization Include="Dialogs\WixUI_Minimal.vi-VN.wxl" Culture="vi-VN" />
+    </Content>
+  </ItemGroup>
+
+  <!--
+    Cross-project references: $(var.FingerprintAgent.Installer.TargetDir) and
+    $(var.FingerprintAgent.Host.TargetDir) resolve to bin output of each project.
+    WiX uses these to harvest the .CA.dll and .exe into the MSI binary table.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\src\FingerprintAgent.Installer\FingerprintAgent.Installer.csproj">
+      <Name>FingerprintAgent.Installer</Name>
+      <Private>true</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\src\FingerprintAgent.Host\FingerprintAgent.Host.csproj">
+      <Name>FingerprintAgent.Host</Name>
+      <Private>true</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,75 @@
+<?xml version="1.0"?>
+<!--
+  CustomActions.wxs — CustomAction DLL + four CustomAction declarations.
+
+  BINARY
+    The CA DLL produced by src/FingerprintAgent.Installer/. The MSBuild target from
+    WixToolset.Dtf.CustomAction wraps the managed DLL into MSI-compatible type-1 format
+    with MakeSfxCA.exe post-build. The output filename is FingerprintAgent.Installer.CA.dll.
+
+  CUSTOM ACTIONS
+    - DetectInstallType        Schedule: InstallExecuteSequence early (before AppSearch)
+    - CheckVcRedist            Schedule: InstallExecuteSequence before InstallValidate (fail-fast)
+    - StopRunningService       Schedule: InstallExecuteSequence before InstallFiles (upgrade only)
+    - SeedProgramDataConfig    Schedule: InstallExecuteSequence after InstallFiles (write config)
+    - ProbeHealthAfterInstall  Schedule: InstallExecuteSequence after StartServices (validate)
+
+  RETURN VALUES
+    CheckVcRedist / ProbeHealthAfterInstall: Failure on rollback
+    DetectInstallType / SeedProgramDataConfig: Failure halts install (writes log via session.Log)
+    StopRunningService: always Success (failure logged but doesn't block)
+
+  CustomActionData (passed to CAs)
+    SeedProgramDataConfig receives:
+      InstallTemplatePath  = [INSTALLFOLDER]config.template.json
+      ProgramDataConfigPath = [PROGRAMDATAFOLDER]config.json
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <Fragment>
+
+    <Binary Id="CustomActionsCA"
+            SourceFile="$(var.FingerprintAgent.Installer.TargetDir)FingerprintAgent.Installer.CA.dll" />
+
+    <!-- DetectInstallType: informational only, always returns Success -->
+    <CustomAction Id="DetectInstallType"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="DetectInstallType"
+                  Execute="immediate"
+                  Return="check" />
+
+    <!-- CheckVcRedist: registry probe, fails install if VC++ x86 missing -->
+    <CustomAction Id="CheckVcRedist"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="CheckVcRedist"
+                  Execute="immediate"
+                  Return="check" />
+
+    <!-- StopRunningService: graceful 30s stop before file replacement on upgrade -->
+    <CustomAction Id="StopRunningService"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="StopRunningService"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <!-- SeedProgramDataConfig: first-install copy / upgrade merge -->
+    <CustomAction Id="SeedProgramDataConfig"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="SeedProgramDataConfig"
+                  Execute="immediate"
+                  Return="check">
+      <CustomActionData>
+        InstallTemplatePath=[InstallTemplatePath]
+        ProgramDataConfigPath=[ProgramDataConfigPath]
+      </CustomActionData>
+    </CustomAction>
+
+    <!-- ProbeHealthAfterInstall: HTTP GET /health on 127.0.0.1:5043 -->
+    <CustomAction Id="ProbeHealthAfterInstall"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="ProbeHealthAfterInstall"
+                  Execute="immediate"
+                  Return="check" />
+
+  </Fragment>
+</Wix>

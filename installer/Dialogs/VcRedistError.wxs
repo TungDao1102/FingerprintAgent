@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!--
+  VcRedistError.wxs — Vietnamese error dialog for missing VC++ x86 runtime.
+
+  TRIGGER
+    CheckVcRedist CA sets session property `VcRedistMissingDialog = "1"` when VC++ x86
+    is not detected. The InstallUISequence reads this property to decide whether to
+    show this dialog before rolling back the install.
+
+  CONTENT (per D-11)
+    Title: Thiếu Microsoft Visual C++ Redistributable (x86)
+    Body:  Vietnamese text with download URL https://aka.ms/vs/17/release/vc_redist.x86.exe
+
+  WIRING
+    This Fragment exposes the Dialog Id. The main .wxs references it via <DialogRef>.
+    Actual display is scheduled in main .wxs InstallUISequence (TODO: Phase 5+).
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <Fragment>
+
+    <!--
+      Custom localizable strings injected into the MSI string table. The actual values
+      are sourced from the CustomAction DLL's embedded VietnameseStrings.resx at runtime
+      (via CustomAction session.Log), so we keep this dialog simple — title + body as
+      plain text. For a richer dialog, the VietnameseStrings resource values would be
+      read via session.Message in a deferred CA. For v1, plain text dialog is acceptable.
+    -->
+    <UI>
+      <Dialog Id="VcRedistErrorDialog"
+              Width="370"
+              Height="270"
+              Title="!(loc.VcRedistErrorTitle)">
+
+        <Control Id="lbl_Title"
+                 Type="Text"
+                 X="20" Y="20"
+                 Width="330" Height="30"
+                 Text="!(loc.VcRedistErrorTitle)"
+                 Transparent="yes" />
+
+        <Control Id="lbl_Body"
+                 Type="Text"
+                 X="20" Y="60"
+                 Width="330" Height="120"
+                 Text="!(loc.VcRedistErrorBody)" />
+
+        <Control Id="btn_Ok"
+                 Type="PushButton"
+                 X="280" Y="230"
+                 Width="80" Height="20"
+                 Text="!(loc.WixUIOk)"
+                 Default="yes"
+                 Cancel="yes">
+          <Publish Event="EndDialog" Value="Return" />
+        </Control>
+
+      </Dialog>
+    </UI>
+
+  </Fragment>
+</Wix>
