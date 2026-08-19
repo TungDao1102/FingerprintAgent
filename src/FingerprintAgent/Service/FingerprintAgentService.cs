@@ -8,6 +8,7 @@ using FingerprintAgent.Adapters;
 using FingerprintAgent.Api;
 using FingerprintAgent.Configuration;
 using FingerprintAgent.Logging;
+using FingerprintAgent.Update;
 using ZkTecoFingerPrint;
 
 namespace FingerprintAgent.Service
@@ -22,6 +23,7 @@ namespace FingerprintAgent.Service
         private Timer _healthCheckTimer;
         private readonly TimeSpan _healthCheckInterval = TimeSpan.FromSeconds(30);
         private ConfigFileWatcher _configWatcher;
+        private UpdateCheckService _updateCheckService;
         private readonly object _configLock = new object();
 
         public FingerprintAgentService()
@@ -72,6 +74,19 @@ namespace FingerprintAgent.Service
                 var msg = $"Failed to start ConfigFileWatcher: {ex.Message}";
                 _logger?.Error(startCid, msg);
                 throw;
+            }
+
+            // D-14: default DISABLED. Failures here don't crash the service — capture still works.
+            try
+            {
+                _updateCheckService = new UpdateCheckService(_config, _logger);
+                _updateCheckService.Start();
+                _logger.Info(startCid, $"UpdateCheckService: started (enabled={_config.Update.Enabled})");
+            }
+            catch (Exception ex)
+            {
+                _updateCheckService = null;
+                _logger?.Error(startCid, $"UpdateCheckService: failed to start: {ex.Message}");
             }
 
             _logger.Info(startCid, "Service started");
@@ -131,6 +146,16 @@ namespace FingerprintAgent.Service
             catch (Exception ex)
             {
                 _logger?.Error(stopCid, $"Error disposing ConfigFileWatcher: {ex.Message}");
+            }
+
+            try
+            {
+                _updateCheckService?.Stop();
+                _updateCheckService?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger?.Error(stopCid, $"UpdateCheckService: dispose error: {ex.Message}");
             }
 
             try
@@ -229,7 +254,7 @@ namespace FingerprintAgent.Service
         {
             var cid = AgentLogger.GenerateCorrelationId();
 
-            // D-06: Only reload ScannerConfig + CorsConfig
+            // D-06: Reload ScannerConfig + CorsConfig + UpdateConfig
             lock (_configLock)
             {
                 _config = newConfig;
@@ -245,7 +270,10 @@ namespace FingerprintAgent.Service
             var scannerManager = _scanner as ScannerManager;
             scannerManager?.UpdatePriority(newConfig.Scanner.Priority);
 
-            _logger?.Info(cid, $"ConfigFileWatcher: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], cors mode={newConfig.Cors.Mode}");
+            // D-14/D-15: ApplyConfig starts/stops the Timer based on update.enabled toggle.
+            _updateCheckService?.ApplyConfig(newConfig);
+
+            _logger?.Info(cid, $"ConfigFileWatcher: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], cors mode={newConfig.Cors.Mode}, update enabled={newConfig.Update.Enabled}");
         }
 
         public void StartConsole()
