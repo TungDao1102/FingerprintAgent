@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>E2E Mock SaaS</title>
+</head>
+<body>
+    <h1>E2E Mock SaaS Page</h1>
+    <p>This page simulates a hospital HIS frontend requesting a fingerprint capture from the local FingerprintAgent.</p>
+    <p>Watch the page title — it updates to <code>OK</code> on success or <code>FAIL</code> on any error. The end-to-end Playwright spec waits for that title change.</p>
+    <pre id="log"></pre>
+    <script>
+        // Append messages to the visible log so debugging a failed E2E run is easier
+        // (Playwright captures the rendered page in the trace, and `--headed` mode
+        // shows the log inline).
+        const log = document.getElementById('log');
+        const append = (msg) => {
+            log.textContent += msg + '\n';
+        };
+
+        async function doCapture() {
+            try {
+                append('[1] Sending POST http://127.0.0.1:5043/api/capture');
+                // Step 1: Browser auto-issues CORS preflight OPTIONS for POST + Content-Type: application/json.
+                //         The agent responds with Access-Control-Allow-* headers we validate in cors-preflight.spec.ts.
+                const resp = await fetch('http://127.0.0.1:5043/api/capture', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        thamChieuId: 'e2e-test',
+                        maPhieu: 'E2E-001',
+                        loaiPhieu: 'signature',
+                        vaiKyId: null,
+                        nhanLucId: null,
+                        metadata: {}
+                    })
+                });
+                append('[2] /api/capture responded ' + resp.status);
+
+                const data = await resp.json();
+                append('[3] Parsed JSON; isSuccess=' + data.isSuccess);
+
+                // Step 2: Forward a minimal summary to the mock backend (same origin).
+                //         Same-origin so no CORS — the cross-origin work is between
+                //         this page (127.0.0.1:8080) and the agent (127.0.0.1:5043).
+                const forward = await fetch('/receive', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: data.isSuccess,
+                        bytesLen: data.imageBytes ? atob(data.imageBytes).length : 0,
+                        sha256: data.verificationData
+                    })
+                });
+                append('[4] /receive responded ' + forward.status);
+
+                document.title = data.isSuccess ? 'OK' : 'FAIL';
+                append('[5] document.title set to ' + document.title);
+            } catch (err) {
+                append('[ERROR] ' + err.message);
+                document.title = 'FAIL';
+            }
+        }
+
+        doCapture();
+    </script>
+</body>
+</html>
