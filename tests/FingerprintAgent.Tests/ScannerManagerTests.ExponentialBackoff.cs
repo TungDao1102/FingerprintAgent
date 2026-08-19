@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using Xunit;
 
@@ -22,7 +23,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void BackoffStep_IncrementsAfterAllAdapterFailure()
+        public async Task BackoffStep_IncrementsAfterAllAdapterFailure()
         {
             var failing = new MockScannerAdapterWithSettableProperties
             {
@@ -31,15 +32,15 @@ namespace FingerprintAgent.Tests
             };
             var manager = new ScannerManager(new[] { failing }, null);
 
-            manager.Scan();
+            await manager.ScanAsync();
             Assert.Equal(1, manager.BackoffStep);
 
-            manager.Scan();
+            await manager.ScanAsync();
             Assert.Equal(2, manager.BackoffStep);
         }
 
         [Fact]
-        public void BackoffStep_CapsAtThree()
+        public async Task BackoffStep_CapsAtThree()
         {
             var failing = new MockScannerAdapterWithSettableProperties
             {
@@ -49,13 +50,13 @@ namespace FingerprintAgent.Tests
             var manager = new ScannerManager(new[] { failing }, null);
 
             for (int i = 0; i < 10; i++)
-                manager.Scan();
+                await manager.ScanAsync();
 
             Assert.Equal(3, manager.BackoffStep);
         }
 
         [Fact]
-        public void BackoffStep_NotAffected_WhenCapturesAlwaysSucceed()
+        public async Task BackoffStep_NotAffected_WhenCapturesAlwaysSucceed()
         {
             var alwaysFailing = new MockScannerAdapterWithSettableProperties
             {
@@ -70,9 +71,9 @@ namespace FingerprintAgent.Tests
             };
             var manager = new ScannerManager(new[] { alwaysFailing, eventuallySucceeding }, null);
 
-            manager.Scan();
-            manager.Scan();
-            manager.Scan();
+            await manager.ScanAsync();
+            await manager.ScanAsync();
+            await manager.ScanAsync();
             Assert.Equal(0, manager.BackoffStep);
         }
 
@@ -92,7 +93,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void InFlight_FailsImmediately_WhenScannerDisconnects()
+        public async Task InFlight_FailsImmediately_WhenScannerDisconnects()
         {
             var disconnecting = new MockScannerAdapterWithSettableProperties
             {
@@ -102,7 +103,7 @@ namespace FingerprintAgent.Tests
             };
             var manager = new ScannerManager(new[] { disconnecting }, null);
 
-            var result1 = manager.Scan();
+            var result1 = await manager.ScanAsync();
             Assert.True(result1.IsSuccess);
             Assert.Equal(0, manager.BackoffStep);
 
@@ -110,7 +111,7 @@ namespace FingerprintAgent.Tests
             disconnecting.InitializeResult = false;
             disconnecting.ScanResult = CaptureResult.Fail("SCANNER_NOT_CONNECTED", "disconnected");
 
-            var result2 = manager.Scan();
+            var result2 = await manager.ScanAsync();
             Assert.False(result2.IsSuccess);
             Assert.Equal("SCANNER_NOT_CONNECTED", result2.ErrorCode);
             Assert.Equal(1, manager.BackoffStep);

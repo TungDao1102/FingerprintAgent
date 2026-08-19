@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using Xunit;
 
@@ -59,7 +60,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void ZKTecoAdapter_CapturesFingerprint_WhenDeviceConnected()
+        public async Task ZKTecoAdapter_CapturesFingerprint_WhenDeviceConnected()
         {
             var adapter = new ZKTecoAdapter();
             if (!adapter.Initialize())
@@ -70,7 +71,7 @@ namespace FingerprintAgent.Tests
             }
 
             Console.WriteLine("[ZKTeco] Place your finger on the scanner within 15 seconds...");
-            var result = adapter.Scan();
+            var result = await adapter.ScanAsync();
 
             if (result.IsSuccess)
             {

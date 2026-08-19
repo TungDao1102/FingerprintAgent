@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Xunit;
 using FingerprintAgent.Adapters;
 
@@ -13,16 +14,16 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void Scan_ReturnsNonNullResult()
+        public async Task Scan_ReturnsNonNullResult()
         {
-            CaptureResult result = _adapter.Scan();
+            CaptureResult result = await _adapter.ScanAsync();
             Assert.NotNull(result);
         }
 
         [Fact]
-        public void Scan_ReturnsValidPngHeader()
+        public async Task Scan_ReturnsValidPngHeader()
         {
-            CaptureResult result = _adapter.Scan();
+            CaptureResult result = await _adapter.ScanAsync();
             byte[] pngHeader = new byte[] { 0x89, 0x50, 0x4E, 0x47 };
             byte[] actualHeader = new byte[4];
             System.Array.Copy(result.ImageBytes, actualHeader, 4);
@@ -30,9 +31,9 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void Scan_VerificationDataIsBase64Sha256()
+        public async Task Scan_VerificationDataIsBase64Sha256()
         {
-            CaptureResult result = _adapter.Scan();
+            CaptureResult result = await _adapter.ScanAsync();
             // SHA-256 = 32 bytes → 44 characters in base64
             Assert.Equal(44, result.VerificationData.Length);
             // Verify it's valid base64
@@ -41,9 +42,9 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void Scan_DeviceIdIsMockScanner001()
+        public async Task Scan_DeviceIdIsMockScanner001()
         {
-            CaptureResult result = _adapter.Scan();
+            CaptureResult result = await _adapter.ScanAsync();
             Assert.Equal("mock-scanner-001", result.DeviceId);
         }
 
@@ -54,24 +55,24 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void Scan_MimeTypeIsImagePng()
+        public async Task Scan_MimeTypeIsImagePng()
         {
-            CaptureResult result = _adapter.Scan();
+            CaptureResult result = await _adapter.ScanAsync();
             Assert.Equal("image/png", result.MimeType);
         }
 
         [Fact]
-        public void Scan_IsDeterministic()
+        public async Task Scan_IsDeterministic()
         {
-            CaptureResult result1 = _adapter.Scan();
-            CaptureResult result2 = _adapter.Scan();
+            CaptureResult result1 = await _adapter.ScanAsync();
+            CaptureResult result2 = await _adapter.ScanAsync();
             Assert.Equal(result1.VerificationData, result2.VerificationData);
         }
 
         [Fact]
-        public void Scan_ImageDimensionsAre320x240()
+        public async Task Scan_ImageDimensionsAre320x240()
         {
-            CaptureResult result = _adapter.Scan();
+            CaptureResult result = await _adapter.ScanAsync();
             Assert.Equal(320, result.Width);
             Assert.Equal(240, result.Height);
         }

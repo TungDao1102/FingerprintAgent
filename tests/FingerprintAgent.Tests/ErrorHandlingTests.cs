@@ -68,17 +68,20 @@ namespace FingerprintAgent.Tests
             _contextReady.Reset();
         }
 
-        private void WaitForContext(int timeoutMs = 5000)
+        private async Task WaitForContextAsync(int timeoutMs = 5000)
         {
-            if (!_contextReady.Wait(timeoutMs))
+            // ManualResetEventSlim.WaitAsync is not available on .NET Framework 4.8
+            // (added in .NET Core 3.0); use Task.Run to offload the blocking wait.
+            bool signaled = await Task.Run(() => _contextReady.Wait(timeoutMs));
+            if (!signaled)
                 throw new TimeoutException(string.Format("HttpListener context not received within {0}ms", timeoutMs));
         }
 
-        private static HttpWebResponse GetResponse(Task<HttpWebResponse> responseTask)
+        private static async Task<HttpWebResponse> GetResponseAsync(Task<HttpWebResponse> responseTask)
         {
             try
             {
-                return responseTask.GetAwaiter().GetResult();
+                return await responseTask;
             }
             catch (WebException ex)
             {
@@ -86,16 +89,33 @@ namespace FingerprintAgent.Tests
             }
         }
 
-        private static string ReadResponseBody(HttpWebResponse response)
+        private static async Task<string> ReadResponseBodyAsync(HttpWebResponse response)
         {
+            // HttpWebResponse.GetResponseStreamAsync is not available on .NET Framework 4.8;
+            // use the sync stream but still read the body asynchronously via StreamReader.ReadToEndAsync.
             using (var reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
             {
-                return reader.ReadToEnd();
+                return await reader.ReadToEndAsync();
             }
         }
 
+        private async Task<HttpWebResponse> SendHttpRequestAsync(string body = "", string path = "/api/capture", string method = "POST", string contentType = "application/json")
+        {
+            var request = WebRequest.CreateHttp(BaseUrl + path);
+            request.Method = method;
+            if (method != "GET")
+            {
+                request.ContentType = contentType;
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+                request.ContentLength = bodyBytes.Length;
+                using (var rs = await request.GetRequestStreamAsync())
+                    await rs.WriteAsync(bodyBytes, 0, bodyBytes.Length);
+            }
+            return (HttpWebResponse)await request.GetResponseAsync();
+        }
+
         [Fact]
-        public void CaptureHandler_Returns503_WhenScannerReturnsScannerNotConnected()
+        public async Task CaptureHandler_Returns503_WhenScannerReturnsScannerNotConnected()
         {
             var mock = new MockScannerAdapterWithSettableProperties
             {
@@ -107,25 +127,15 @@ namespace FingerprintAgent.Tests
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/api/capture");
-                request.Method = "POST";
-                request.ContentType = "application/json";
-                byte[] body = Encoding.UTF8.GetBytes("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
-                request.ContentLength = body.Length;
-                using (var rs = request.GetRequestStream())
-                    rs.Write(body, 0, body.Length);
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, mock);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
 
-            var response = GetResponse(responseTask);
+            var response = await GetResponseAsync(responseTask);
             Assert.Equal(503, (int)response.StatusCode);
 
-            string json = ReadResponseBody(response);
+            string json = await ReadResponseBodyAsync(response);
             var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
 
             Assert.False(captureResponse.IsSuccess);
@@ -135,7 +145,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void CaptureHandler_Returns504_WhenScannerReturnsCaptureTimeout()
+        public async Task CaptureHandler_Returns504_WhenScannerReturnsCaptureTimeout()
         {
             var mock = new MockScannerAdapterWithSettableProperties
             {
@@ -147,25 +157,15 @@ namespace FingerprintAgent.Tests
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/api/capture");
-                request.Method = "POST";
-                request.ContentType = "application/json";
-                byte[] body = Encoding.UTF8.GetBytes("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
-                request.ContentLength = body.Length;
-                using (var rs = request.GetRequestStream())
-                    rs.Write(body, 0, body.Length);
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, mock);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
 
-            var response = GetResponse(responseTask);
+            var response = await GetResponseAsync(responseTask);
             Assert.Equal(504, (int)response.StatusCode);
 
-            string json = ReadResponseBody(response);
+            string json = await ReadResponseBodyAsync(response);
             var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
 
             Assert.False(captureResponse.IsSuccess);
@@ -174,7 +174,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void CaptureHandler_Returns500_WhenScannerReturnsCaptureFailed()
+        public async Task CaptureHandler_Returns500_WhenScannerReturnsCaptureFailed()
         {
             var mock = new MockScannerAdapterWithSettableProperties
             {
@@ -186,25 +186,15 @@ namespace FingerprintAgent.Tests
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/api/capture");
-                request.Method = "POST";
-                request.ContentType = "application/json";
-                byte[] body = Encoding.UTF8.GetBytes("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
-                request.ContentLength = body.Length;
-                using (var rs = request.GetRequestStream())
-                    rs.Write(body, 0, body.Length);
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, mock);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
 
-            var response = GetResponse(responseTask);
+            var response = await GetResponseAsync(responseTask);
             Assert.Equal(500, (int)response.StatusCode);
 
-            string json = ReadResponseBody(response);
+            string json = await ReadResponseBodyAsync(response);
             var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
 
             Assert.False(captureResponse.IsSuccess);
@@ -212,7 +202,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void CaptureHandler_Returns400_WhenRequestHasMissingFields()
+        public async Task CaptureHandler_Returns400_WhenRequestHasMissingFields()
         {
             var mock = new MockScannerAdapterWithSettableProperties
             {
@@ -223,25 +213,15 @@ namespace FingerprintAgent.Tests
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/api/capture");
-                request.Method = "POST";
-                request.ContentType = "application/json";
-                byte[] body = Encoding.UTF8.GetBytes("{\"thamChieuId\":\"test\"}");
-                request.ContentLength = body.Length;
-                using (var rs = request.GetRequestStream())
-                    rs.Write(body, 0, body.Length);
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\"}");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, mock);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
 
-            var response = GetResponse(responseTask);
+            var response = await GetResponseAsync(responseTask);
             Assert.Equal(400, (int)response.StatusCode);
 
-            string json = ReadResponseBody(response);
+            string json = await ReadResponseBodyAsync(response);
             var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
 
             Assert.False(captureResponse.IsSuccess);
@@ -251,7 +231,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void CaptureHandler_SuccessResponse_DoesNotIncludeVendorErrorCodeOrTimestamp()
+        public async Task CaptureHandler_SuccessResponse_DoesNotIncludeVendorErrorCodeOrTimestamp()
         {
             var mock = new MockScannerAdapterWithSettableProperties
             {
@@ -263,25 +243,15 @@ namespace FingerprintAgent.Tests
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/api/capture");
-                request.Method = "POST";
-                request.ContentType = "application/json";
-                byte[] body = Encoding.UTF8.GetBytes("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
-                request.ContentLength = body.Length;
-                using (var rs = request.GetRequestStream())
-                    rs.Write(body, 0, body.Length);
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, mock);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
 
-            var response = GetResponse(responseTask);
+            var response = await GetResponseAsync(responseTask);
             Assert.Equal(200, (int)response.StatusCode);
 
-            string json = ReadResponseBody(response);
+            string json = await ReadResponseBodyAsync(response);
             var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
 
             Assert.True(captureResponse.IsSuccess);
@@ -292,7 +262,7 @@ namespace FingerprintAgent.Tests
         }
 
         [Fact]
-        public void HealthHandler_Returns200_WhenScannerIsConnected()
+        public async Task HealthHandler_Returns200_WhenScannerIsConnected()
         {
             var mock = new MockScannerAdapterWithSettableProperties
             {
@@ -303,22 +273,17 @@ namespace FingerprintAgent.Tests
             var handler = new HealthHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/health");
-                request.Method = "GET";
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync(path: "/health", method: "GET");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, mock);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
 
-            var response = responseTask.GetAwaiter().GetResult();
+            var response = await responseTask;
             Assert.Equal(200, (int)response.StatusCode);
         }
 
         [Fact]
-        public void HealthHandler_Returns503_WhenDisconnectedAndMaxBackoff()
+        public async Task HealthHandler_Returns503_WhenDisconnectedAndMaxBackoff()
         {
             var failing = new MockScannerAdapterWithSettableProperties
             {
@@ -328,7 +293,7 @@ namespace FingerprintAgent.Tests
             var sm = new ScannerManager(new[] { failing }, null);
 
             for (int i = 0; i < 5; i++)
-                sm.Scan();
+                await sm.ScanAsync();
 
             Assert.Equal(3, sm.BackoffStep);
             Assert.True(sm.InBackoff);
@@ -336,22 +301,17 @@ namespace FingerprintAgent.Tests
             var handler = new HealthHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/health");
-                request.Method = "GET";
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync(path: "/health", method: "GET");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, sm);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, sm);
 
-            var response = GetResponse(responseTask);
+            var response = await GetResponseAsync(responseTask);
             Assert.Equal(503, (int)response.StatusCode);
         }
 
         [Fact]
-        public void HealthHandler_Returns200_WhenConnected_RegardlessOfBackoffStep()
+        public async Task HealthHandler_Returns200_WhenConnected_RegardlessOfBackoffStep()
         {
             var failing = new MockScannerAdapterWithSettableProperties
             {
@@ -366,26 +326,21 @@ namespace FingerprintAgent.Tests
             };
             var sm = new ScannerManager(new[] { failing, succeeding }, null);
 
-            sm.Scan();
-            sm.Scan();
-            sm.Scan();
+            await sm.ScanAsync();
+            await sm.ScanAsync();
+            await sm.ScanAsync();
 
             Assert.Equal(0, sm.BackoffStep);
 
             var handler = new HealthHandler(null);
 
             ResetContextReady();
-            var responseTask = Task.Run(() =>
-            {
-                var request = WebRequest.CreateHttp(BaseUrl + "/health");
-                request.Method = "GET";
-                return (HttpWebResponse)request.GetResponse();
-            });
+            var responseTask = SendHttpRequestAsync(path: "/health", method: "GET");
 
-            WaitForContext(5000);
-            handler.Handle(_capturedContext, sm);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, sm);
 
-            var response = responseTask.GetAwaiter().GetResult();
+            var response = await responseTask;
             Assert.Equal(200, (int)response.StatusCode);
         }
     }

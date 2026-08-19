@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 
 namespace FingerprintAgent.Tests
@@ -31,6 +32,8 @@ namespace FingerprintAgent.Tests
         public bool ProbeConnection() => ProbeConnectionResult;
 
         public CaptureResult Scan(CancellationToken cancellationToken = default) => ScanResult;
+
+        public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default) => Task.FromResult(ScanResult);
 
         public string VendorErrorCode => VendorErrorCodeValue;
     }
