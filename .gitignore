@@ -120,6 +120,9 @@ ipch/
 
 # Visual Studio Trace Files
 *.e2e
+# Allow our E2E test directory (rule above matches .E2E case-insensitively)
+!tests/FingerprintAgent.E2E/
+!tests/FingerprintAgent.E2E/**
 
 # TFS 2012 Local Workspace
 $tf/

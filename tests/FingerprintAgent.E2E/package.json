@@ -1,0 +1,16 @@
+{
+  "name": "fingerprint-agent-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "End-to-end browser tests for FingerprintAgent (real Chromium -> CORS preflight -> /api/capture -> mock backend). Run against an MSI-installed service on localhost:5043.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "install-browsers": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "@types/node": "^22",
+    "typescript": "^5.4"
+  }
+}
