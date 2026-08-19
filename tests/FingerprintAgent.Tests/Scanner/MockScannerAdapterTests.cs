@@ -2,7 +2,7 @@ using System.Threading.Tasks;
 using Xunit;
 using FingerprintAgent.Adapters;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Scanner
 {
     public class MockScannerAdapterTests
     {

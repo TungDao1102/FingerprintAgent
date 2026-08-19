@@ -8,10 +8,11 @@ using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Api;
 using FingerprintAgent.Models;
+using FingerprintAgent.Tests.Scanner;
 using Newtonsoft.Json;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Api
 {
     public class ErrorHandlingTests : IDisposable
     {

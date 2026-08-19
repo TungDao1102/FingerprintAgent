@@ -6,9 +6,10 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Api;
+using FingerprintAgent.Configuration;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Api
 {
     /// <summary>
     /// Tests CorsMiddleware behavior through a real HttpServer with HttpClient.
@@ -30,7 +31,7 @@ namespace FingerprintAgent.Tests
             public WildcardModeFixture()
             {
                 Scanner = new MockScannerAdapter();
-                var config = new Configuration.AgentConfig();
+                var config = new AgentConfig();
                 config.Cors.Mode = "wildcard";
                 config.Http.Port = 5045;
                 Server = new HttpServer(config, Scanner);
@@ -66,7 +67,7 @@ namespace FingerprintAgent.Tests
             public AllowlistModeFixture()
             {
                 Scanner = new MockScannerAdapter();
-                var config = new Configuration.AgentConfig();
+                var config = new AgentConfig();
                 config.Cors.Mode = "allowlist";
                 config.Cors.AllowedOrigins = new[] { "http://trusted.com" };
                 config.Http.Port = 5046;

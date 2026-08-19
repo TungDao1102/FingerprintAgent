@@ -2,7 +2,7 @@ using System;
 using System.Runtime.InteropServices;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Scanner
 {
     /// <summary>
     /// Raw ZK SDK probe — calls libzkfp.dll directly (same pattern as vendor demo Form1.cs).

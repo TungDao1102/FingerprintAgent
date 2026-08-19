@@ -131,12 +131,19 @@ HTTP POST /api/capture
 
 ---
 
-## Test Projects (Two Exist)
+## Test Project
+
+Single test project (rooted under `tests/`) organized into subfolders by system boundary:
 
 | Path | Purpose | Framework | Test Count |
 |---|---|---|---|
-| `src/FingerprintAgent.Tests/` | Unit tests | xUnit 2.6.2, Moq 4.20.70 | ~24 |
-| `tests/FingerprintAgent.Tests/` | Integration tests | xUnit 2.9.3, Moq 4.20.72 | ~35 |
+| `tests/FingerprintAgent.Tests/` | Unit + integration tests (all) | xUnit 2.9.3, Moq 4.20.72 | 58 |
+
+**Subfolder layout:**
+- `Api/` — HTTP handler/server tests (CorsMiddleware, ErrorHandling, HttpServerIntegration)
+- `Configuration/` — config loading tests
+- `Logging/` — AgentLogger tests
+- `Scanner/` — scanner/manager/probe tests + ZK device integration tests
 
 **Test naming:** Descriptive English — `BackoffStep_StartsAtZero`, `CaptureHandler_Returns503_WhenScannerReturnsScannerNotConnected`
 
@@ -144,7 +151,7 @@ HTTP POST /api/capture
 - `MockScannerAdapterWithSettableProperties` — settable `IsConnectedValue`, `InitializeResult`, `ScanResult`, `VendorErrorCodeValue`
 - `CaptureHandlerTestFixture` — real `HttpListener`-based integration test fixture
 
-**Pre-existing test failures:** 2 tests fail due to missing SecuGen SDK DLLs (not in repo). These are adapter integration tests that require vendor binaries.
+**Note:** Real-device tests (ZKTeco, SecuGen) are skipped at runtime when vendor SDK DLLs are missing — they don't fail `dotnet test` on machines without hardware.
 
 ---
 
@@ -156,7 +163,7 @@ dotnet build FingerprintAgent.sln
 dotnet build FingerprintAgent.sln -c Release   # 0 warnings, 0 errors (production); 2 pre-existing xUnit1031 warnings in test code
 
 # Run tests
-dotnet test FingerprintAgent.sln               # ~59 passing, 2 pre-existing failures
+dotnet test FingerprintAgent.sln               # 58 passing, 0 failures
 
 # Install service (admin)
 .\scripts\Install-Service.ps1
@@ -220,7 +227,6 @@ Examples: `feat(03-01): add exponential backoff`, `docs(03-02): update configura
 | Bare `catch { }` | `AgentLogger.cs:167` | `TryWriteEventLog` fallback |
 | Bare `catch { }` | `HttpServer.cs:88` | `AggregateException` drain wait |
 | Fire-and-forget | `HttpServer.cs:103` | `#pragma warning disable CS4014` + `Wait()` for graceful drain — fragile |
-| Dual test project | `src/` and `tests/` | Only `tests/FingerprintAgent.Tests/` referenced in phase artifacts; `src/` version may be legacy |
 | Static singleton teardown | `ZKTecoAdapter` | `ZkTecoFingerHost.Close()` called once globally; individual `Dispose()` must not call it |
 | CS4014 fire-and-forget | `HttpServer.cs:103,166` | `Wait()` drain is fragile; `catch (Exception)` also catches `ThreadAbortException` |
 | Nullable not enforced | Project-wide | `net48` + LangVersion 8.0, no `<Nullable>enable</Nullable>` |
@@ -240,10 +246,13 @@ FingerprintAgent/                    ← git root
 │   │   ├── Models/                  ← CaptureRequest, CaptureResponse
 │   │   ├── Logging/                 ← AgentLogger
 │   │   └── Service/                 ← FingerprintAgentService
-│   ├── FingerprintAgent.Host/       ← Windows Service entry point (1 Program.cs)
-│   └── FingerprintAgent.Tests/      ← unit tests (6 .cs)
+│   └── FingerprintAgent.Host/       ← Windows Service entry point (1 Program.cs)
 ├── tests/
-│   └── FingerprintAgent.Tests/      ← integration tests (9 .cs)
+│   └── FingerprintAgent.Tests/      ← single test project, organized by subfolder
+│       ├── Api/                     ← HttpServer, handlers, CORS tests
+│       ├── Configuration/           ← ConfigLoader tests
+│       ├── Logging/                 ← AgentLogger tests
+│       └── Scanner/                 ← ScannerManager, mock adapter, ZK integration tests
 ├── scripts/
 │   ├── Install-Service.ps1          ← admin install via sc.exe
 │   ├── Uninstall-Service.ps1

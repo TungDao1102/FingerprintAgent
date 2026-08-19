@@ -9,7 +9,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Api
 {
     public class HttpServerIntegrationTests : IDisposable
     {

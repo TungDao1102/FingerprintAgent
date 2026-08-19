@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Scanner
 {
     public class ScannerManagerExponentialBackoffTests
     {

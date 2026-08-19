@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Scanner
 {
     /// <summary>
     /// Test double for IScannerAdapter with fully settable properties.

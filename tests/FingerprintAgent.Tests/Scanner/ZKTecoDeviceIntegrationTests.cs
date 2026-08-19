@@ -3,7 +3,7 @@ using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Scanner
 {
     /// <summary>
     /// Integration tests that require a physical ZKTeco scanner connected via USB.

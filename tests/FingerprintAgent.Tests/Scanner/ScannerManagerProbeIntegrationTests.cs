@@ -7,7 +7,7 @@ using FingerprintAgent.Api;
 using FingerprintAgent.Configuration;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Scanner
 {
     /// <summary>
     /// Real-device integration tests for ScannerManager.TryProbe() and HealthHandler.

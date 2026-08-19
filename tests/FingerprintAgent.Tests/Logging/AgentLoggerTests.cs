@@ -9,7 +9,7 @@ using FingerprintAgent.Configuration;
 using FingerprintAgent.Logging;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Logging
 {
     public class AgentLoggerTests : IDisposable
     {

@@ -3,7 +3,7 @@ using System.IO;
 using FingerprintAgent.Configuration;
 using Xunit;
 
-namespace FingerprintAgent.Tests
+namespace FingerprintAgent.Tests.Configuration
 {
     public class ConfigLoaderTests : IDisposable
     {
