@@ -26,18 +26,24 @@
     <OutputType>Package</OutputType>
     <DefineConstants>ProductCode=FF16181A-F127-4ED9-921B-D69E05AB70B7;UpgradeCode=E00CD299-9D25-46A2-837B-226177F20210</DefineConstants>
     <Version Condition="'$(Version)' == ''">0.1.0</Version>
+    <!-- Don't auto-include .cs files as compile items; this project only orchestrates candle.exe. -->
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
   </PropertyGroup>
 
   <Import Project="$(WixToolPath)\wix.targets" Condition="Exists('$(WixToolPath)\wix.targets')" />
 
   <ItemGroup>
+    <!-- WiX 3.x uses <Compile> as a WiX item type (NOT MSBuild Compile). Listed here so
+         candle.exe can find the source files when imported wix.targets processes them. -->
     <Compile Include="FingerprintAgent.Installer.wxs" />
     <Compile Include="Components\Service.wxs" />
     <Compile Include="Components\ProgramDataConfig.wxs" />
     <Compile Include="Components\CustomActions.wxs" />
     <Compile Include="Components\UninstallBehavior.wxs" />
     <Compile Include="Dialogs\VcRedistError.wxs" />
+  </ItemGroup>
 
+  <ItemGroup>
     <WixLocalization Include="Dialogs\WixUI_Minimal.vi-VN.wxl" Culture="vi-VN" />
   </ItemGroup>
 
@@ -53,11 +59,23 @@
   </ItemGroup>
 
   <Target Name="Build" Outputs="bin\$(Configuration)\$(OutputName).msi">
-    <MSBuild Targets="Compile"
-             Projects="@(Compile)"
-             Properties="Configuration=$(Configuration);Platform=$(Platform);WixToolPath=$(WixToolPath);OutputFile=bin\$(Configuration)\$(OutputName).wixobj" />
-    <MSBuild Targets="Link"
-             Projects="@(Compile)"
-             Properties="Configuration=$(Configuration);Platform=$(Platform);WixToolPath=$(WixToolPath);OutputFile=bin\$(Configuration)\$(OutputName).msi;Cultures=en-US;vi-VN" />
+    <!--
+      candle.exe (Compile) + light.exe (Link) invocations.
+      The wix.targets import above provides the standard WiX 3.x Compile/Link targets.
+      We just need to wire up the bin directory and dependency on the source files.
+    -->
+    <PropertyGroup>
+      <OutputPath>bin\$(Configuration)\</OutputPath>
+      <WixToolDir>$([MSBuild]::EnsureTrailingSlash('$(WixToolPath)'))</WixToolDir>
+      <CandlePath>$(WixToolDir)candle.exe</CandlePath>
+      <LightPath>$(WixToolDir)light.exe</LightPath>
+    </PropertyGroup>
+    <ItemGroup>
+      <WixSource Include="@(Compile)" />
+      <WixObject Include="@(Compile->'$(OutputPath)%(Filename).wixobj')" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutputPath)" />
+    <Exec Command="&quot;$(CandlePath)&quot; -ext WixUIExtension -ext WixUtilExtension -o &quot;$(OutputPath)&quot; @(Compile, ' ')" />
+    <Exec Command="&quot;$(LightPath)&quot; -ext WixUIExtension -ext WixUtilExtension -cultures:en-US -loc &quot;Dialogs\WixUI_Minimal.vi-VN.wxl&quot; -out &quot;$(OutputPath)$(OutputName).msi&quot; @(WixObject, ' ')" />
   </Target>
 </Project>
