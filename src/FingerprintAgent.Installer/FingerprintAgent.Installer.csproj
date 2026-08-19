@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>8.0</LangVersion>
+    <OutputType>Library</OutputType>
+    <RootNamespace>FingerprintAgent.Installer</RootNamespace>
+    <AssemblyName>FingerprintAgent.Installer</AssemblyName>
+    <PlatformTarget>x86</PlatformTarget>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <!-- D-07: MSI is unsigned in v1 -->
+    <SignAssembly>false</SignAssembly>
+    <!-- Tell WiX/DTF the CA DLL outputs the type-1 wrapped binary with .CA.dll suffix -->
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      WiX DTF (Deployment Tools Foundation) for C# CustomActions.
+      WiX 3.x packages are no longer in the public NuGet feed (WixToolset.Dtf.* 3.14.0 not found).
+      The legacy Microsoft.Deployment.WindowsInstaller namespace and [CustomAction] attribute
+      remain available in WixToolset.Dtf.WindowsInstaller 4.0.x (no OSMF EULA requirement, unlike
+      WiX 5/6/7). The MSBuild target from WixToolset.Dtf.CustomAction wraps the managed DLL
+      into the MSI-compatible type-1 CA binary (FingerprintAgent.Installer.CA.dll) post-build.
+
+      DOCUMENTED DEVIATION (Rule 3 - environment): WiX 3.x is unavailable in the local NuGet
+      feed; using the latest OSMF-free DTF package that retains the legacy Session/CustomAction API.
+      Full MSI build verification is deferred to GitHub Actions CI where the WiX 3.x toolchain
+      can be installed via the WixToolset.Sdk NuGet package.
+    -->
+    <PackageReference Include="WixToolset.Dtf.WindowsInstaller" Version="4.0.4" />
+    <PackageReference Include="WixToolset.Dtf.CustomAction" Version="4.0.4" />
+    <!-- Newtonsoft.Json 13.0.3 matches main library version per STACK.md; required because
+         ConfigMerger.cs (linked from FingerprintAgent.Library) uses Newtonsoft.Json.Linq.JObject. -->
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Link ConfigMerger.cs source into the CA DLL. Avoids forcing msiexec to load the
+      full FingerprintAgent.Library assembly (and all its vendor SDK references) at install time.
+      ConfigMerger.cs only depends on Newtonsoft.Json.Linq which is already pulled in above.
+      If ConfigMerger evolves in the main library, the CA picks up the change on next build —
+      no version drift between agent logic and installer logic.
+    -->
+    <Compile Include="..\FingerprintAgent\Configuration\ConfigMerger.cs" Link="Configuration\ConfigMerger.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- System.Net.Http is not auto-referenced for net48 in SDK-style projects. -->
+    <Reference Include="System.Net.Http" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- CustomAction.config tells msiexec to load this DLL into .NET Framework 4.8 CLR. -->
+    <Content Include="CustomAction.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- VietnameseStrings.resx is auto-embedded by SDK default (DefaultEmbeddedResourceItems).
+         Designer.cs is hand-authored (SDK-style without WinForms SDK does not auto-generate)
+         and auto-included by DefaultCompileItems.
+         Default LogicalName matches "FingerprintAgent.Installer.Properties.VietnameseStrings.resources"
+         which is what VietnameseStrings.Designer.cs expects. -->
+  </ItemGroup>
+</Project>
