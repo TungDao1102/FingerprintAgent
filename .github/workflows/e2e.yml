@@ -1,0 +1,179 @@
+name: E2E Tests
+
+# D-23: Manual trigger via workflow_dispatch only.
+# Playwright + agent install is heavy (~10-15 min per run).
+# Operator runs this before tagging a release to validate the full
+# browser -> agent -> mock backend flow on a real MSI-installed service.
+on:
+  workflow_dispatch:
+
+# Concurrency: cancel any in-progress run when a new one is triggered.
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+# Minimal permissions — checkout only.
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright end-to-end tests on Windows MSI install
+    runs-on: windows-latest  # FingerprintAgent is Windows-only
+
+    env:
+      MSI_PATH: 'installer\bin\Release\FingerprintAgent-Setup.msi'
+      SERVICE_NAME: 'FingerprintAgent'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Restore + build the .NET solution that the MSI bundles.
+      - name: Restore solution
+        run: dotnet restore FingerprintAgent.sln
+
+      - name: Build solution (Release)
+        run: dotnet build FingerprintAgent.sln -c Release --no-restore
+
+      # Verify the xUnit suite is green before we trust the E2E flow.
+      - name: Run xUnit tests
+        run: dotnet test tests/FingerprintAgent.Tests/FingerprintAgent.Tests.csproj -c Release --no-build --verbosity normal
+
+      # Build the MSI. The .wixproj requires WixToolPath pointing at a
+      # WiX 3.x install (downloaded below) since it's a legacy non-SDK project.
+      - name: Install WiX 3.14.1 toolchain
+        shell: pwsh
+        run: |
+          $wixZip = "wix314-binaries.zip"
+          $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/$wixZip"
+          $installDir = "C:\wix314"
+          Write-Host "Downloading WiX 3.14.1 from $wixUrl"
+          Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip
+          Write-Host "Extracting to $installDir"
+          Expand-Archive -Path $wixZip -DestinationPath $installDir -Force
+
+      - name: Build MSI
+        run: dotnet build installer/FingerprintAgent.Installer.wixproj -c Release --no-restore /p:WixToolPath=C:\wix314 /p:Version=0.0.0-e2e
+
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          if (-not (Test-Path $env:MSI_PATH)) {
+            Write-Error "MSI not found at $env:MSI_PATH"
+            exit 1
+          }
+          $size = (Get-Item $env:MSI_PATH).Length
+          Write-Host "MSI artifact: $env:MSI_PATH ($size bytes)"
+
+      # Install the MSI silently. WiX /qn mode skips all UI (D-08).
+      # /l*v install.log gives a verbose log we can inspect on failure.
+      - name: Install MSI (silent)
+        shell: pwsh
+        run: |
+          Write-Host "Installing MSI silently..."
+          $proc = Start-Process -FilePath 'msiexec.exe' `
+            -ArgumentList "/i `"$env:MSI_PATH`" /qn /l*v install.log" `
+            -Wait -PassThru -NoNewWindow
+          Write-Host "msiexec exit code: $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "MSI install failed (exit code $($proc.ExitCode)). See install.log."
+            exit $proc.ExitCode
+          }
+
+      # Start the service explicitly (Start=auto should already start it,
+      # but be explicit so a slow service registration doesn't trip the
+      # /health wait loop).
+      - name: Start FingerprintAgent service
+        shell: pwsh
+        run: |
+          Write-Host "Starting service '$env:SERVICE_NAME'..."
+          Start-Service -Name $env:SERVICE_NAME -ErrorAction Stop
+          $svc = Get-Service -Name $env:SERVICE_NAME
+          Write-Host "Service status: $($svc.Status)"
+
+      # Wait for /health to respond. Agent takes a few seconds to bind to 5043
+      # after the service transitions to Running. 30 attempts x 1s = 30s budget.
+      - name: Wait for agent /health to respond
+        shell: pwsh
+        run: |
+          $ready = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              $resp = Invoke-WebRequest -Uri 'http://127.0.0.1:5043/health' -UseBasicParsing -TimeoutSec 2
+              if ($resp.StatusCode -eq 200) {
+                Write-Host "/health OK (attempt $($i+1))"
+                $ready = $true
+                break
+              }
+              Write-Host "/health returned $($resp.StatusCode) (attempt $($i+1))"
+            } catch {
+              Write-Host "/health not ready (attempt $($i+1)): $($_.Exception.Message)"
+            }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ready) {
+            Write-Error "Agent /health never returned 200 within 30s"
+            # Dump agent log for diagnostics
+            $logPath = 'C:\ProgramData\FingerprintAgent\Logs\agent.log'
+            if (Test-Path $logPath) {
+              Write-Host "--- Last 50 lines of $logPath ---"
+              Get-Content $logPath -Tail 50
+            }
+            exit 1
+          }
+
+      # Install Playwright + Chromium. Pinning @playwright/test 1.55.1 per
+      # RESEARCH.md §4 — Chromium 142+ requires additional local-network-access
+      # launch flags we don't want to chase.
+      - name: Install E2E dependencies
+        working-directory: tests/FingerprintAgent.E2E
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      # Mock backend is auto-started by Playwright's webServer config
+      # (playwright.config.ts). Workers=1 + reuseExistingServer=false in CI
+      # means each spec run gets a fresh process on port 8080.
+      - name: Run Playwright tests
+        working-directory: tests/FingerprintAgent.E2E
+        run: npx playwright test
+
+      # Always run cleanup so the next workflow run starts from a clean runner.
+      # Uninstall via the MSI file path (NOT the ProductCode) — msiexec /x works
+      # without us having to query WMI for the IdentifyingNumber.
+      - name: Uninstall MSI (cleanup)
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "Uninstalling MSI from $env:MSI_PATH ..."
+          $proc = Start-Process -FilePath 'msiexec.exe' `
+            -ArgumentList "/x `"$env:MSI_PATH`" /qn /l*v uninstall.log" `
+            -Wait -PassThru -NoNewWindow
+          Write-Host "msiexec uninstall exit code: $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0) {
+            Write-Error "MSI uninstall failed (exit code $($proc.ExitCode)). See uninstall.log."
+            # Throw so the workflow visibly fails on cleanup failure.
+            throw "E2E cleanup uninstall failed"
+          }
+
+      # Upload Playwright report for post-mortem analysis on test failures.
+      # `if: always()` ensures we still get the report when tests fail.
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: tests/FingerprintAgent.E2E/playwright-report/
+          retention-days: 14
+          if-no-files-found: warn
