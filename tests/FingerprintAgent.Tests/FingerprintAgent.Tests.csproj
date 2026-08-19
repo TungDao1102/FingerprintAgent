@@ -19,6 +19,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FingerprintAgent\FingerprintAgent.csproj" />
+    <!-- WixCA alias lets tests disambiguate ConfigMerger which is linked (and therefore duplicated) into
+         the Installer assembly. Without an alias, references to ConfigMerger become ambiguous. -->
+    <ProjectReference Include="..\..\src\FingerprintAgent.Installer\FingerprintAgent.Installer.csproj" Aliases="WixCA" />
   </ItemGroup>
 
   <ItemGroup>
