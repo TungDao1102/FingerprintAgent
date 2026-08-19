@@ -1,0 +1,99 @@
+name: Release MSI
+
+# D-02: CI builds MSI on tag push (v*). No local MSI build script exists.
+# The MSI is uploaded as a workflow artifact; an optional step (commented below)
+# can also auto-attach to a GitHub Release if desired.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allow operator-triggered manual build for ad-hoc testing
+  workflow_dispatch:
+
+# Concurrency: keep in-progress release builds, don't cancel
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Required for the optional gh-release step (commented out below)
+permissions:
+  contents: write
+
+jobs:
+  build-msi:
+    name: Build FingerprintAgent-Setup.msi
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 9
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      # Compute the MSI ProductVersion from the git tag (strip 'v' prefix)
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $tag = "${{ github.ref_name }}"
+            $version = $tag -replace '^v', ''
+            "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "MSI ProductVersion = $version"
+          } else {
+            # Manual dispatch or other — default to 0.0.0-dev
+            "version=0.0.0-dev" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "MSI ProductVersion = 0.0.0-dev (manual run)"
+          }
+
+      - name: Restore solution
+        run: dotnet restore FingerprintAgent.sln
+
+      - name: Build solution (Release)
+        run: dotnet build FingerprintAgent.sln -c Release --no-restore /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Run xUnit tests
+        run: dotnet test tests/FingerprintAgent.Tests/FingerprintAgent.Tests.csproj -c Release --no-build --verbosity normal
+
+      - name: Build MSI
+        # WixToolset.Sdk NuGet pulls in candle.exe + light.exe + MakeSfxCA.exe
+        # via NuGet — no separate WiX install needed on the runner.
+        run: dotnet build installer/FingerprintAgent.Installer.wixproj -c Release --no-restore /p:Version=${{ steps.version.outputs.version }}
+
+      - name: Verify MSI artifact
+        shell: pwsh
+        run: |
+          $msiPath = "installer/bin/Release/FingerprintAgent-Setup.msi"
+          if (-not (Test-Path $msiPath)) {
+            Write-Error "MSI not found at $msiPath"
+            exit 1
+          }
+          $size = (Get-Item $msiPath).Length
+          Write-Host "MSI artifact: $msiPath ($size bytes)"
+          if ($size -lt 100KB) {
+            Write-Error "MSI suspiciously small ($size bytes) — likely empty"
+            exit 1
+          }
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FingerprintAgent-Setup-${{ steps.version.outputs.version }}
+          path: installer/bin/Release/FingerprintAgent-Setup.msi
+          if-no-files-found: error
+          retention-days: 30
+
+      # Optional: auto-attach MSI to GitHub Release on tag push.
+      # Uncomment to enable. By default, operator manually attaches via the
+      # GitHub UI (safer for v1 — confirms artifact is correct before publishing).
+      #
+      # - name: Attach MSI to GitHub Release
+      #   if: startsWith(github.ref, 'refs/tags/v')
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: installer/bin/Release/FingerprintAgent-Setup.msi
+      #     generate_release_notes: true
