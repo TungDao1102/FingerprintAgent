@@ -123,27 +123,44 @@
 
 **Mode:** mvp
 
+**Status:** ✓ COMPLETE (2026-08-19)
+
 **Success Criteria:**
 
-1. Tạo được MSI installer từ build script (WiX Toolset hoặc WixSharp).
-2. MSI cài đặt service, thư mục log, và VC++ redist x86 silently nếu thiếu.
-3. MSI gỡ cài đặt sạch sẽ (dừng service, xóa files, xóa service).
-4. `Test-Capture.ps1` gọi `/api/capture` và trả về ảnh base64.
-5. Angular client gọi `localhost:5043/api/capture` từ domain SaaS (với CORS đã cấu hình) và gửi kết quả về backend.
-6. Không có crash khi scanner không cắm — service vẫn healthy.
+1. ✓ Tạo được MSI installer từ build script (WiX Toolset 3.14.1 + DTF CustomAction).
+2. ⚠ MSI cài đặt service, thư mục log. **VC++ x86 detect-only** (Vietnamese error dialog, no bundling) — deviation from ROADMAP SC #2 wording per locked D-09 decision. IT downloads from aka.ms.
+3. ✓ MSI gỡ cài đặt sạch sẽ (dừng service, xóa files, xóa service). Logs preserved by default; `REMOVE_LOGS=1` escape hatch.
+4. ✓ `Test-Capture.ps1` (preserved from Phase 1) gọi `/api/capture` và trả về ảnh base64.
+5. ✓ Angular client gọi `localhost:5043/api/capture` từ domain SaaS — Playwright E2E suite (`tests/FingerprintAgent.E2E/`) validates real CORS preflight + capture flow against running agent.
+6. ✓ Không có crash khi scanner không cắm — service vẫn healthy (covered by Phase 3 backoff tests).
 
 **Requirements Covered:**
 
-- DEP-01, DEP-02, DEP-03, DEP-04
+- DEP-01, DEP-02, DEP-03, DEP-04, DEP-05, DEP-06
 
 **Deliverables:**
 
-- Build script tạo MSI (WiX/WixSharp)
-- `Install-Service.ps1`, `Uninstall-Service.ps1`, `Test-Capture.ps1` cho dev/test
-- Hướng dẫn triển khai cho IT bệnh viện
-- Integration test từ browser → agent
-- `README.md` + `DEPLOYMENT.md`
-- Cơ chế auto-update từ GitHub Release (updater helper hoặc built-in)
+- ✓ `src/FingerprintAgent.Installer/` — WiX 3.x DTF CustomAction DLL (net48): CheckVcRedist, ProbeHealthAfterInstall, SeedProgramDataConfig, DetectInstallType, StopRunningService
+- ✓ `installer/` — WiX 3.x source: main `.wxs` + Components/ProgramDataConfig.wxs, Service.wxs, CustomActions.wxs, UninstallBehavior.wxs + Dialogs/VcRedistError.wxs + WixUI_Minimal.vi-VN.wxl
+- ✓ `src/FingerprintAgent/Configuration/ConfigMerger.cs` — recursive additive merge (D-35) with `MergeIntoFile` static method (shared between ConfigLoader + MSI CustomAction)
+- ✓ Runtime config migrated to `C:\ProgramData\FingerprintAgent\config.json` (D-33/D-34/D-36/D-37); legacy v1.0 install-dir config auto-copied on upgrade
+- ✓ `src/FingerprintAgent/Update/` — `UpdateCheckService` (Timer-based polling, auto-backoff 6h→12h→24h, msiexec self-upgrade) + `UpdateState` enum + `GitHubReleaseInfo` DTO
+- ✓ `.github/workflows/release.yml` — MSI build on tag push (windows-latest, downloads WiX 3.14.1)
+- ✓ `.github/workflows/e2e.yml` — E2E Playwright workflow (manual `workflow_dispatch`)
+- ✓ `tests/FingerprintAgent.E2E/` — Playwright 1.55.1 + Chromium + TypeScript: CORS preflight, capture flow, end-to-end browser→agent→backend
+- ✓ `README.md` — combined dev + IT guide (100 lines)
+- ✓ `DEPLOYMENT.md` — Vietnamese operations runbook (326 lines, 10 sections)
+- ✓ `docs/` folder REMOVED — `.planning/codebase/` is the single source of truth (D-27)
+- ✓ PS1 scripts preserved unchanged: `Install-Service.ps1`, `Uninstall-Service.ps1`, `Service.ps1`, `Setup-VendorSdk.ps1`, `Test-Capture.ps1` (D-32)
+
+**Plan Progress:**
+
+| Plan | Title | Status | Completed |
+|------|-------|--------|-----------|
+| 04-01 | ConfigMerger + ProgramData path migration | ✅ Complete | 2026-08-19 |
+| 04-02 | MSI Installer + WiX CustomActions + Release CI | ✅ Complete | 2026-08-19 |
+| 04-03 | Auto-Update Timer + UpdateCheckService | ✅ Complete | 2026-08-19 |
+| 04-04 | E2E Playwright + DEPLOYMENT.md + docs cleanup | ✅ Complete | 2026-08-19 |
 
 ---
 
@@ -171,4 +188,4 @@
 
 ---
 *Roadmap created: 2026-07-28*
-*Last updated: 2026-07-28 after initial roadmap creation*
+*Last updated: 2026-08-19 after Phase 4 completion*

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: Release
 status: complete
-stopped_at: Phase 04 context gathered
-last_updated: "2026-08-19T07:18:19.818Z"
+stopped_at: Phase 04 complete — code review pending
+last_updated: "2026-08-19T18:30:00.000Z"
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
-  percent: 75
+  completed_phases: 4
+  total_plans: 15
+  completed_plans: 15
+  percent: 100
 ---
 
 # State: FingerprintAgent
@@ -24,11 +24,11 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 ## Current Phase
 
-**Phase 3: Resilience & Runtime Reconfiguration** ✓ COMPLETE
+**Phase 4: Deployment & End-to-End Validation** ✓ COMPLETE
 
-- Status: ◆ All 3 plans executed successfully
-- Goal: Service tự phục hồi khi scanner mất kết nối, hỗ trợ reload cấu hình runtime, và xử lý lỗi capture rõ ràng.
-- Success criteria: scanner disconnect → SCANNER_NOT_CONNECTED + retry; exponential backoff 10s/30s/60s/120s; config reload without restart; capture timeout → 504; SDK error → 500.
+- Status: ◆ All 4 plans executed successfully (24 atomic commits)
+- Goal: Production-grade MSI installer, GitHub Releases auto-update, E2E Playwright tests, deployment docs.
+- Deliverables: ConfigMerger + ProgramData migration (D-33/34/35/36/37); MSI + WiX CustomActions + Vietnamese localization + GitHub Actions release workflow; UpdateCheckService with auto-backoff (D-13/14/15/17/43); Playwright E2E suite + README.md + DEPLOYMENT.md.
 
 ## Phase Progress
 
@@ -37,7 +37,7 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 | 1     | ●      | 5/5   | 100%     |
 | 2     | ●      | 4/4   | 100%     |
 | 3     | ●      | 3/3   | 100%     |
-| 4     | ○      | 0/4   | 0%       |
+| 4     | ●      | 4/4   | 100%     |
 
 ## Plan 03-01 Completed
 
@@ -124,11 +124,40 @@ See: `.planning/PROJECT.md` (updated 2026-07-28)
 
 ## Active Blockers
 
-None.
+None. Phase 4 complete pending `/gsd-code-review --depth=deep`.
 
-## Recent Decisions
+## Plan 04-04 Decisions (Wave 4: E2E + Docs)
 
-### Plan 01-02 Decisions
+- **Playwright 1.55.1 PINNED** (not 1.56+) — Chromium 142+ blocks public-origin fetch to private network by default. 1.55.1 works around this without `--ip-address-space-overrides`. Documented as migration note for 1.56+ future.
+- **E2E project is TypeScript, separate from xUnit** — different runner, different dependency graph, different language. Playwright 1.55.1 + Chromium-only for v1 (no Firefox/WebKit).
+- **`docs/` deleted** — `.planning/codebase/` is the single source of truth. Stale docs cause confusion; single source prevents drift.
+- **NO CHANGELOG.md** — GitHub Releases IS the changelog (D-26). Operators point users at releases page, not a markdown file.
+- **PS1 scripts preserved unchanged** — MSI is production path, PS1 is dev/test fallback (D-32). Both documented in README.
+- **Removed `*.e2e` .gitignore rule** — it was case-insensitively matching the new `tests/FingerprintAgent.E2E/` directory. Added negation exceptions. No `.e2e` files exist in repo (rule was dead VS template code).
+
+## Plan 04-03 Decisions (Wave 3: Auto-Update)
+
+- **Single HttpClient reused** for both GitHub API + MSI download — avoids socket exhaustion under polling. Test injection via `internal UpdateCheckService(..., HttpMessageHandler handler)` overload.
+- **Auto-backoff per D-15**: base 6h → 12h after 3 no-updates → 24h after another 3 → resets to 6h on detected release.
+- **On download/install failure**: disable `update.enabled` in config.json (via ConfigMerger), write to log + EventLog (D-43), service keeps running on old version — never crash.
+- **Manual AssemblyInfo.cs** with InternalsVisibleTo — SDK-style net48 doesn't auto-generate; needed for test injection of HttpMessageHandler.
+
+## Plan 04-02 Decisions (Wave 2: MSI Installer)
+
+- **WiX DTF 4.0.4 instead of 3.14.x** — 3.x not in NuGet feed; 4.0.4 is latest OSMF-free version. CustomAction namespace migrated to `WixToolset.Dtf.WindowsInstaller` with `extern alias` aliases preserving legacy code patterns.
+- **Non-SDK .wixproj** — WixToolset.Sdk 3.x is not a NuGet package; WiX 4 SDK rejects v3 schema. CI workflow downloads WiX 3.14.1 binaries from `https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm`.
+- **VC++ x86 detect-only (no bundling)** per D-09 — Chinese dialog shows aka.ms download URL. Deviation from ROADMAP SC #2 (which said "silent install"); D-09 is the locked decision.
+- **`REMOVE_LOGS=1` escape hatch** for uninstall — log preservation is the default (D-28/29). Power users can opt in to log removal.
+
+## Plan 04-01 Decisions (Wave 1: Config + ProgramData)
+
+- **D-35 algorithm**: additive-only merge. User values preserved, user deletions respected, template keys ADD only (never re-add after user deletion).
+- **DO NOT use `JObject.Merge()`** — its default REPLACES, not additive. Custom recursive walk is required.
+- **`config.template.json` added** alongside `config.json` — both ship to bin output. MSI uses `config.template.json` (read-only reference); ProgramData holds the live user config.
+- **Legacy fallback**: v1.0 install-dir `config.json` is COPIED to ProgramData on first upgrade (not overwritten by template) — preserves IT customizations across upgrade.
+- **4-way case matrix in `ConfigLoader.Load()`** (not 3 as plan said) — added "ProgramData-only without template" case for dev workflow without MSI.
+
+## Plan 01-02 Decisions
 
 - Manual config binding (GetSection/Value) instead of IConfiguration.Get<T>() — avoids Binder extension issues on .NET Framework 4.8
 - CorsMiddleware tested via real HttpServer + HttpClient because HttpListenerRequest/Response cannot be unit-tested in isolation
@@ -150,10 +179,10 @@ None.
 
 ---
 *State created: 2026-07-28*
-*Last updated: 2026-07-28 after initialization*
+*Last updated: 2026-08-19 after Phase 4 completion*
 
 ## Session
 
-**Last session:** 2026-08-19T07:18:19.792Z
-**Stopped at:** Phase 04 context gathered
-**Resume file:** .planning/phases/04-deployment-end-to-end-validation/04-CONTEXT.md
+**Last session:** 2026-08-19T18:30:00.000Z
+**Stopped at:** Phase 04 complete — code review pending
+**Next:** Run `/gsd-code-review --depth=deep 4` for post-implementation review
