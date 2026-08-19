@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using System.Threading.Tasks;
 using FingerprintAgent.Configuration;
 using FingerprintAgent.Logging;
 
@@ -283,14 +284,14 @@ namespace FingerprintAgent.Adapters
         /// Per-adapter budget is NOT enforced — ZKTecoAdapter needs 15s rolling-capture
         /// for UX (D-13: centralized timeout only).
         /// </summary>
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public async Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             string cid = AgentLogger.GenerateCorrelationId();
 
             // MockMode: delegate directly to mock
             if (_mockMode)
             {
-                return ActiveAdapter.Scan(cancellationToken);
+                return await ActiveAdapter.ScanAsync(cancellationToken);
             }
 
             // SCAN-06 backoff: retry active adapter once if it was previously connected
@@ -303,7 +304,7 @@ namespace FingerprintAgent.Adapters
                 if (current.Initialize())
                 {
                     _logger?.Info(null, "ScannerManager: active adapter reconnected, proceeding");
-                    var retryResult = current.Scan(cancellationToken);
+                    var retryResult = await current.ScanAsync(cancellationToken);
                     if (retryResult.IsSuccess)
                     {
                         ActiveAdapter = current;
@@ -342,7 +343,7 @@ namespace FingerprintAgent.Adapters
                         if (adapter.Initialize())
                         {
                             ActiveAdapter = adapter;
-                            var scanResult = adapter.Scan(totalCts.Token);
+                            var scanResult = await adapter.ScanAsync(totalCts.Token);
                             if (scanResult.IsSuccess)
                             {
                                 lock (_backoffLock) { _backoffStep = 0; _backoffUntil = DateTime.MinValue; }

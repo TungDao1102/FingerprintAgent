@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Threading.Tasks;
 using DPFP;
 using DPFP.Capture;
 
@@ -14,13 +15,13 @@ namespace FingerprintAgent.Adapters
 {
     /// <summary>
     /// Digital Persona U.are.U scanner adapter using DPUruNet wrapper.
-    /// Wraps the event-driven capture API with ManualResetEvent for synchronous Scan().
+    /// Wraps the event-driven capture API with TaskCompletionSource for asynchronous ScanAsync().
     /// </summary>
     public class DigitalPersonaAdapter : IScannerAdapter, CaptureEventHandler, IDisposable
     {
         private Reader _reader;
         private Capture _capture;
-        private ManualResetEvent _captureEvent;
+        private TaskCompletionSource<bool> _captureTcs;
         private Sample _capturedSample;
         private string _deviceId;
         private string _model;
@@ -79,7 +80,7 @@ namespace FingerprintAgent.Adapters
             }
         }
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public async Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             if (_reader == null)
             {
@@ -87,12 +88,12 @@ namespace FingerprintAgent.Adapters
                 return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "DigitalPersona scanner not initialized. Call Initialize() first.");
             }
 
-            // Use a LOCAL wait handle per call to prevent the callback from racing
-            // with a subsequent Scan() call's reassignment of _captureEvent.
-            // The callback (OnComplete) signals _captureEvent which, at the moment
-            // it fires, holds the correct local handle for this call.
-            var waitHandle = new ManualResetEvent(false);
-            _captureEvent = waitHandle;
+            // Use a LOCAL TaskCompletionSource per call to prevent the callback from
+            // racing with a subsequent ScanAsync() call's reassignment of _captureTcs.
+            // The callback (OnComplete) signals _captureTcs which, at the moment it
+            // fires, holds the correct local TCS for this call.
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _captureTcs = tcs;
             _capturedSample = null;
             _vendorErrorCode = "NONE";
 
@@ -109,7 +110,25 @@ namespace FingerprintAgent.Adapters
             bool signaled;
             try
             {
-                signaled = waitHandle.WaitOne(3000);
+                // Link caller cancellation with a 3s timeout. When either fires, the
+                // TCS is cancelled and the await re-throws OperationCanceledException.
+                // RunContinuationsAsynchronously (set on TCS construction) keeps the
+                // OnComplete callback — which may run on a native SDK thread — from
+                // blocking on our async continuation.
+                using (var timeoutCts = new CancellationTokenSource(3000))
+                using (var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
+                using (linkedCts.Token.Register(() => tcs.TrySetCanceled(linkedCts.Token)))
+                {
+                    try
+                    {
+                        await tcs.Task;
+                        signaled = true;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        signaled = false;
+                    }
+                }
             }
             finally
             {
@@ -184,8 +203,8 @@ namespace FingerprintAgent.Adapters
         public void OnComplete(object Capture, string ReaderSerialNumber, Sample Sample)
         {
             _capturedSample = Sample;
-            if (_captureEvent != null)
-                _captureEvent.Set();
+            if (_captureTcs != null)
+                _captureTcs.TrySetResult(true);
         }
 
         public void OnFingerGone(object Capture, string ReaderSerialNumber) { }
@@ -240,6 +259,7 @@ namespace FingerprintAgent.Adapters
 // Allows compilation and unit testing without the vendor SDK DLL present.
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FingerprintAgent.Adapters
 {
@@ -258,9 +278,9 @@ namespace FingerprintAgent.Adapters
 
         public bool ProbeConnection() => IsConnected;
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
-            return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "DigitalPersona: Stub adapter — SDK not present");
+            return Task.FromResult(CaptureResult.Fail("SCANNER_NOT_CONNECTED", "DigitalPersona: Stub adapter — SDK not present"));
         }
 
         public void Dispose()

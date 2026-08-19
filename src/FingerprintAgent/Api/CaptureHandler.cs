@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Logging;
 using FingerprintAgent.Models;
@@ -18,7 +19,7 @@ namespace FingerprintAgent.Api
             _logger = logger;
         }
 
-        public void Handle(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
+        public async Task HandleAsync(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
         {
             if (string.IsNullOrEmpty(correlationId))
             {
@@ -30,7 +31,7 @@ namespace FingerprintAgent.Api
                 string body;
                 using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
                 {
-                    body = reader.ReadToEnd();
+                    body = await reader.ReadToEndAsync();
                 }
 
                 _logger?.Info(correlationId, "Capture request received");
@@ -39,7 +40,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Request body is empty";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -52,7 +53,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Invalid JSON in request body";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -60,7 +61,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Missing required field: thamChieuId";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -68,11 +69,11 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Missing required field: maPhieu";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    WriteErrorResponse(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
-                CaptureResult result = scanner.Scan();
+                CaptureResult result = await scanner.ScanAsync();
                 var vendorErrorCode = scanner.VendorErrorCode;
 
                 if (!result.IsSuccess)
@@ -81,7 +82,7 @@ namespace FingerprintAgent.Api
                     var timestamp = DateTime.UtcNow.ToString("O");
 
                     _logger?.Error(correlationId, $"Capture failed — {errorCode}: {result.ErrorMessage}");
-                    WriteErrorResponse(context, statusCode, false, result.ErrorMessage, errorCode, vendorErrorCode, timestamp, correlationId);
+                    await WriteErrorResponseAsync(context, statusCode, false, result.ErrorMessage, errorCode, vendorErrorCode, timestamp, correlationId);
                     return;
                 }
 
@@ -106,14 +107,15 @@ namespace FingerprintAgent.Api
                 context.Response.StatusCode = 200;
                 context.Response.ContentType = "application/json";
                 context.Response.ContentLength64 = buffer.Length;
-                context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                await context.Response.OutputStream.FlushAsync();
                 context.Response.OutputStream.Close();
             }
             catch (Exception ex)
             {
                 var errorMessage = $"Capture failed: {ex.Message}";
                 _logger?.Error(correlationId, $"Capture failed — CAPTURE_FAILED: {ex.Message}");
-                WriteErrorResponse(context, 500, false, errorMessage, "CAPTURE_FAILED", null, null, correlationId);
+                await WriteErrorResponseAsync(context, 500, false, errorMessage, "CAPTURE_FAILED", null, null, correlationId);
             }
         }
 
@@ -136,7 +138,7 @@ namespace FingerprintAgent.Api
             }
         }
 
-        private void WriteErrorResponse(HttpListenerContext context, int statusCode, bool isSuccess, string errorMessage, string errorCode, string vendorErrorCode, string timestamp, string correlationId = null)
+        private async Task WriteErrorResponseAsync(HttpListenerContext context, int statusCode, bool isSuccess, string errorMessage, string errorCode, string vendorErrorCode, string timestamp, string correlationId = null)
         {
             var response = new CaptureResponse
             {
@@ -153,7 +155,8 @@ namespace FingerprintAgent.Api
             context.Response.StatusCode = statusCode;
             context.Response.ContentType = "application/json";
             context.Response.ContentLength64 = buffer.Length;
-            context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+            await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+            await context.Response.OutputStream.FlushAsync();
             context.Response.OutputStream.Close();
         }
     }

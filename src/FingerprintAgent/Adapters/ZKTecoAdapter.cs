@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Threading.Tasks;
 using ZkTecoFingerPrint;
 
 namespace FingerprintAgent.Adapters
@@ -182,7 +183,7 @@ namespace FingerprintAgent.Adapters
             return true;
         }
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public async Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             // Snapshot device handle under lock so ProbeConnection's Close+Initialize
             // (also under lock) can't dispose the handle mid-capture. Long
@@ -232,11 +233,10 @@ namespace FingerprintAgent.Adapters
                         return CaptureResult.Fail("CAPTURE_TIMEOUT", "ZKTeco: capture cancelled by timeout");
                     }
 
-                    lastResult = device.AcquireFingerprintAsync(imageBuffer, cancellationToken)
-                        .GetAwaiter().GetResult();
+                    lastResult = await device.AcquireFingerprintAsync(imageBuffer, cancellationToken);
                     if (lastResult.IsSuccess)
                         break;
-                    Thread.Sleep(retryDelayMs);
+                    await Task.Delay(retryDelayMs, cancellationToken);
                 } while (stopwatch.ElapsedMilliseconds < captureBudgetMs);
 
                 if (lastResult == null || !lastResult.IsSuccess)

@@ -4,6 +4,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace FingerprintAgent.Adapters
 {
@@ -83,18 +84,18 @@ namespace FingerprintAgent.Adapters
             return true;
         }
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             if (_device == IntPtr.Zero)
             {
                 _vendorErrorCode = "NOT_INITIALIZED";
-                return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic scanner not initialized. Call Initialize() first.");
+                return Task.FromResult(CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic scanner not initialized. Call Initialize() first."));
             }
 
             if (cancellationToken.IsCancellationRequested)
             {
                 _vendorErrorCode = "CANCELLED";
-                return CaptureResult.Fail("CAPTURE_TIMEOUT", "Futronic: capture cancelled");
+                return Task.FromResult(CaptureResult.Fail("CAPTURE_TIMEOUT", "Futronic: capture cancelled"));
             }
 
             _vendorErrorCode = "NONE";
@@ -108,7 +109,7 @@ namespace FingerprintAgent.Adapters
                 FutronicSDK.ftrScanCloseDevice(_device);
                 _device = IntPtr.Zero;
                 _isConnected = false;
-                return CaptureResult.Fail("CAPTURE_ERROR", $"Futronic:{_vendorErrorCode}");
+                return Task.FromResult(CaptureResult.Fail("CAPTURE_ERROR", $"Futronic:{_vendorErrorCode}"));
             }
 
             // CRITICAL: invert pixels per D-07
@@ -126,7 +127,7 @@ namespace FingerprintAgent.Adapters
                 verificationData = Convert.ToBase64String(hash);
             }
 
-            return new CaptureResult
+            return Task.FromResult(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = png,
@@ -137,7 +138,7 @@ namespace FingerprintAgent.Adapters
                 ErrorMessage = null,
                 Width = _imageWidth,
                 Height = _imageHeight
-            };
+            });
         }
 
         private static byte[] ToPngGrayscale(byte[] raw, int width, int height)
@@ -282,6 +283,7 @@ namespace FingerprintAgent.Adapters
 // Allows compilation and unit testing without the vendor SDK DLL present.
 using System;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FingerprintAgent.Adapters
 {
@@ -300,9 +302,9 @@ namespace FingerprintAgent.Adapters
             return false;
         }
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
-            return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic: Stub adapter — SDK not present");
+            return Task.FromResult(CaptureResult.Fail("SCANNER_NOT_CONNECTED", "Futronic: Stub adapter — SDK not present"));
         }
 
         public void Dispose()

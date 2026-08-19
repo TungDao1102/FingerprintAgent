@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Text;
+using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Logging;
 using Newtonsoft.Json;
@@ -18,7 +19,7 @@ namespace FingerprintAgent.Api
             _logger = logger;
         }
 
-        public void Handle(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
+        public async Task HandleAsync(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
         {
             _logger?.Debug(correlationId ?? AgentLogger.GenerateCorrelationId(), "Health check requested");
 
@@ -62,7 +63,8 @@ namespace FingerprintAgent.Api
             context.Response.StatusCode = httpStatus;
             context.Response.ContentType = "application/json";
             context.Response.ContentLength64 = buffer.Length;
-            context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+            await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+            await context.Response.OutputStream.FlushAsync();
             context.Response.OutputStream.Close();
         }
     }

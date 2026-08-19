@@ -1,3 +1,5 @@
+using System.Threading.Tasks;
+
 namespace FingerprintAgent.Adapters
 {
     public interface IScannerAdapter
@@ -33,10 +35,10 @@ namespace FingerprintAgent.Adapters
         string VendorErrorCode { get; }
 
         /// <summary>
-        /// Performs capture. Optional CancellationToken enables ScannerManager's per-adapter
+        /// Performs capture asynchronously. Optional CancellationToken enables ScannerManager's per-adapter
         /// 3s budget (D-06). Adapters should honor cancellation at the next checkpoint
         /// — not interrupt mid-native-call (corrupts native state).
         /// </summary>
-        CaptureResult Scan(System.Threading.CancellationToken cancellationToken = default);
+        Task<CaptureResult> ScanAsync(System.Threading.CancellationToken cancellationToken = default);
     }
 }

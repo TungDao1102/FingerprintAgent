@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FingerprintAgent.Adapters
 {
@@ -21,7 +22,7 @@ namespace FingerprintAgent.Adapters
 
         public string VendorErrorCode { get { return "MOCK"; } }
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             const int width = 320;
             const int height = 240;
@@ -35,7 +36,7 @@ namespace FingerprintAgent.Adapters
                 verificationData = Convert.ToBase64String(hash);
             }
 
-            return new CaptureResult
+            return Task.FromResult(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = imageBytes,
@@ -46,7 +47,7 @@ namespace FingerprintAgent.Adapters
                 ErrorMessage = null,
                 Width = width,
                 Height = height
-            };
+            });
         }
 
         private static byte[] GenerateMockPng(int width, int height)

@@ -5,6 +5,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace FingerprintAgent.Adapters
 {
@@ -31,12 +32,12 @@ namespace FingerprintAgent.Adapters
         /// </summary>
         public virtual bool ProbeConnection() => IsConnected;
 
-        public CaptureResult Scan(CancellationToken cancellationToken = default)
+        public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             if (cancellationToken.IsCancellationRequested)
             {
                 _lastError = "CANCELLED";
-                return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture cancelled before start");
+                return Task.FromResult(CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture cancelled before start"));
             }
 
             byte[] raw;
@@ -47,13 +48,13 @@ namespace FingerprintAgent.Adapters
             catch (Exception ex)
             {
                 _lastError = ex.Message;
-                return CaptureResult.Fail("CAPTURE_ERROR", ex.Message);
+                return Task.FromResult(CaptureResult.Fail("CAPTURE_ERROR", ex.Message));
             }
 
             if (raw == null || raw.Length == 0)
             {
                 _lastError = "CAPTURE_RETURNED_EMPTY";
-                return CaptureResult.Fail("CAPTURE_ERROR", "Capture returned no image data");
+                return Task.FromResult(CaptureResult.Fail("CAPTURE_ERROR", "Capture returned no image data"));
             }
 
             byte[] png = ToPngGrayscale(raw, ImageWidth, ImageHeight);
@@ -65,7 +66,7 @@ namespace FingerprintAgent.Adapters
                 verificationData = Convert.ToBase64String(hash);
             }
 
-            return new CaptureResult
+            return Task.FromResult(new CaptureResult
             {
                 IsSuccess = true,
                 ImageBytes = png,
@@ -76,7 +77,7 @@ namespace FingerprintAgent.Adapters
                 ErrorMessage = null,
                 Width = ImageWidth,
                 Height = ImageHeight
-            };
+            });
         }
 
         protected abstract int ImageWidth { get; }

@@ -108,10 +108,9 @@ namespace FingerprintAgent.Api
                 try
                 {
                     var context = await _listener.GetContextAsync();
-#pragma warning disable CS4014
-                    var handlerTask = Task.Run(() => HandleRequest(context), ct);
+                    var handlerTask = HandleRequestAsync(context, ct);
                     lock (_inFlightLock) _inFlightRequests.Add(handlerTask);
-                    handlerTask.ContinueWith(t =>
+                    _ = handlerTask.ContinueWith(t =>
                     {
                         lock (_inFlightLock) _inFlightRequests.Remove(t);
                         if (t.IsFaulted)
@@ -119,7 +118,6 @@ namespace FingerprintAgent.Api
                             _logger?.Error(AgentLogger.GenerateCorrelationId(), $"Unhandled request error: {t.Exception}");
                         }
                     }, TaskScheduler.Default);
-#pragma warning restore CS4014
                 }
                 catch (ObjectDisposedException)
                 {
@@ -136,10 +134,21 @@ namespace FingerprintAgent.Api
             }
         }
 
-        private void HandleRequest(HttpListenerContext context)
+        private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken ct)
         {
             try
             {
+                if (ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        context.Response.StatusCode = 503;
+                        context.Response.Close();
+                    }
+                    catch (ObjectDisposedException) { }
+                    return;
+                }
+
                 var origin = context.Request.Headers["Origin"];
 
                 // CORS preflight check
@@ -159,11 +168,11 @@ namespace FingerprintAgent.Api
 
                 if (path == "/health" && method == "GET")
                 {
-                    _healthHandler.Handle(context, _scanner, correlationId);
+                    await _healthHandler.HandleAsync(context, _scanner, correlationId);
                 }
                 else if (path == "/api/capture" && method == "POST")
                 {
-                    _captureHandler.Handle(context, _scanner, correlationId);
+                    await _captureHandler.HandleAsync(context, _scanner, correlationId);
                 }
                 else
                 {
@@ -171,7 +180,8 @@ namespace FingerprintAgent.Api
                     var errorBytes = Encoding.UTF8.GetBytes("{\"error\":\"Not found\"}");
                     context.Response.ContentType = "application/json";
                     context.Response.ContentLength64 = errorBytes.Length;
-                    context.Response.OutputStream.Write(errorBytes, 0, errorBytes.Length);
+                    await context.Response.OutputStream.WriteAsync(errorBytes, 0, errorBytes.Length);
+                    await context.Response.OutputStream.FlushAsync();
                     context.Response.OutputStream.Close();
                 }
             }
