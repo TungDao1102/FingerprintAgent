@@ -8,6 +8,7 @@ namespace FingerprintAgent.Configuration
         public ScannerConfig Scanner { get; set; } = new ScannerConfig();
         public LoggingConfig Logging { get; set; } = new LoggingConfig();
         public SecurityConfig Security { get; set; } = new SecurityConfig();
+        public UpdateConfig Update { get; set; } = new UpdateConfig();
     }
 
     public class ServiceConfig
@@ -46,5 +47,13 @@ namespace FingerprintAgent.Configuration
     public class SecurityConfig
     {
         public string BindIp { get; set; } = "127.0.0.1";
+    }
+
+    public class UpdateConfig
+    {
+        public bool Enabled { get; set; } = false;
+        public string GitHubOwner { get; set; } = "";
+        public string GitHubRepo { get; set; } = "FingerprintAgent";
+        public int CheckIntervalHours { get; set; } = 6;
     }
 }
