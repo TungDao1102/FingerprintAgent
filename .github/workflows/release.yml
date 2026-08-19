@@ -59,10 +59,24 @@ jobs:
       - name: Run xUnit tests
         run: dotnet test tests/FingerprintAgent.Tests/FingerprintAgent.Tests.csproj -c Release --no-build --verbosity normal
 
+      - name: Install WiX 3.14.1 toolchain
+        # WiX 3.x is not in NuGet as an MSBuild SDK. Download binaries from GitHub release.
+        # The .wixproj is non-SDK style (requires WixToolPath to point at the install).
+        shell: pwsh
+        run: |
+          $wixZip = "wix314-binaries.zip"
+          $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/$wixZip"
+          $installDir = "C:\wix314"
+          Write-Host "Downloading WiX 3.14.1 from $wixUrl"
+          Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip
+          Write-Host "Extracting to $installDir"
+          Expand-Archive -Path $wixZip -DestinationPath $installDir -Force
+          Write-Host "WiX 3.14.1 installed at $installDir"
+          Get-ChildItem $installDir | Select-Object Name | Format-Table -AutoSize
+
       - name: Build MSI
-        # WixToolset.Sdk NuGet pulls in candle.exe + light.exe + MakeSfxCA.exe
-        # via NuGet — no separate WiX install needed on the runner.
-        run: dotnet build installer/FingerprintAgent.Installer.wixproj -c Release --no-restore /p:Version=${{ steps.version.outputs.version }}
+        # WixToolPath tells the legacy .wixproj where to find wix.targets/candle/light.
+        run: dotnet build installer/FingerprintAgent.Installer.wixproj -c Release --no-restore /p:WixToolPath=C:\wix314 /p:Version=${{ steps.version.outputs.version }}
 
       - name: Verify MSI artifact
         shell: pwsh
