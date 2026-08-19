@@ -60,10 +60,10 @@ namespace FingerprintAgent.Service
             // Start config file watcher after service is fully running
             try
             {
-                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "config.json");
+                var configPath = ConfigLoader.ProgramDataConfigPath;
                 _configWatcher = new ConfigFileWatcher(configPath, _logger);
                 _configWatcher.ConfigReloaded += OnConfigReloaded;
-                _logger.Info(startCid, "ConfigFileWatcher: started watching config.json");
+                _logger.Info(startCid, $"ConfigFileWatcher: started watching {configPath}");
             }
             catch (Exception ex)
             {
