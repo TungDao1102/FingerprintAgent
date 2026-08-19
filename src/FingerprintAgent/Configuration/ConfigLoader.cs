@@ -94,8 +94,13 @@ namespace FingerprintAgent.Configuration
                 return LoadFromFile(programDataConfigPath);
             }
 
-            // Case 3: no ProgramData config and no template — fall back to install-dir
-            //         config.json (dev workflow without MSI).
+            // ProgramData present, no template — load as-is, no merge.
+            if (hasProgramData)
+            {
+                return LoadFromFile(programDataConfigPath);
+            }
+
+            // Fallback: no ProgramData, no template — legacy install-dir config.
             return LoadFromDirectory(installDir);
         }
 
