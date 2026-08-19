@@ -5,7 +5,6 @@
     <OutputType>Library</OutputType>
     <RootNamespace>FingerprintAgent</RootNamespace>
     <AssemblyName>FingerprintAgent.Library</AssemblyName>
-    <InternalsVisibleTo>FingerprintAgent.Tests</InternalsVisibleTo>
     <PlatformTarget>x86</PlatformTarget>
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
@@ -46,6 +45,7 @@
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Drawing" />
     <Reference Include="System.ComponentModel.DataAnnotations" />
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
   <ItemGroup>
