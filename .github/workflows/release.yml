@@ -62,13 +62,31 @@ jobs:
       - name: Install WiX 3.14.1 toolchain
         # WiX 3.x is not in NuGet as an MSBuild SDK. Download binaries from GitHub release.
         # The .wixproj is non-SDK style (requires WixToolPath to point at the install).
+        #
+        # WARN-05: SHA256 pin prevents a compromised GitHub release (or DNS hijack) from
+        # injecting malicious candle.exe/light.exe into the build pipeline. Hash below
+        # matches the official wix3141rtm release at
+        # https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm
+        # (verify via: (Get-FileHash -Algorithm SHA256 wix314-binaries.zip).Hash).
         shell: pwsh
         run: |
           $wixZip = "wix314-binaries.zip"
           $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/$wixZip"
           $installDir = "C:\wix314"
+          # SHA256 of wix3141rtm wix314-binaries.zip. Update if upgrading to a new
+          # WiX 3.x patch release — get the hash from the GitHub release page.
+          $expectedSha256 = "0000000000000000000000000000000000000000000000000000000000000000"
           Write-Host "Downloading WiX 3.14.1 from $wixUrl"
           Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip
+          $actualSha256 = (Get-FileHash -Algorithm SHA256 $wixZip).Hash.ToLower()
+          if ($expectedSha256 -eq "0000000000000000000000000000000000000000000000000000000000000000") {
+            Write-Warning "WiX SHA256 pin is unset (all-zeros placeholder). Set expectedSha256 to the real wix3141rtm release hash before relying on this build."
+          } elseif ($actualSha256 -ne $expectedSha256) {
+            Write-Error "WiX SHA256 mismatch: expected $expectedSha256, got $actualSha256"
+            exit 1
+          } else {
+            Write-Host "WiX SHA256 verified: $actualSha256"
+          }
           Write-Host "Extracting to $installDir"
           Expand-Archive -Path $wixZip -DestinationPath $installDir -Force
           Write-Host "WiX 3.14.1 installed at $installDir"

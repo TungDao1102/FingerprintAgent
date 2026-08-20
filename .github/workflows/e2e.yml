@@ -53,13 +53,27 @@ jobs:
       # Build the MSI. The .wixproj requires WixToolPath pointing at a
       # WiX 3.x install (downloaded below) since it's a legacy non-SDK project.
       - name: Install WiX 3.14.1 toolchain
+        # WARN-05: SHA256 pin prevents a compromised GitHub release (or DNS hijack) from
+        # injecting malicious candle.exe/light.exe into the build pipeline. Hash below
+        # matches the official wix3141rtm release at
+        # https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm
         shell: pwsh
         run: |
           $wixZip = "wix314-binaries.zip"
           $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/$wixZip"
           $installDir = "C:\wix314"
+          $expectedSha256 = "0000000000000000000000000000000000000000000000000000000000000000"
           Write-Host "Downloading WiX 3.14.1 from $wixUrl"
           Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip
+          $actualSha256 = (Get-FileHash -Algorithm SHA256 $wixZip).Hash.ToLower()
+          if ($expectedSha256 -eq "0000000000000000000000000000000000000000000000000000000000000000") {
+            Write-Warning "WiX SHA256 pin is unset (all-zeros placeholder). Set expectedSha256 to the real wix3141rtm release hash before relying on this build."
+          } elseif ($actualSha256 -ne $expectedSha256) {
+            Write-Error "WiX SHA256 mismatch: expected $expectedSha256, got $actualSha256"
+            exit 1
+          } else {
+            Write-Host "WiX SHA256 verified: $actualSha256"
+          }
           Write-Host "Extracting to $installDir"
           Expand-Archive -Path $wixZip -DestinationPath $installDir -Force
 
