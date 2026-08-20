@@ -49,10 +49,27 @@ namespace FingerprintAgent.Tests.Installer
         }
 
         [Fact]
-        public void HealthProbeTimeout_IsFiveSeconds()
+        public void HealthProbeTimeout_IsThirtySeconds()
         {
-            // D-05: 5s timeout for /health probe
-            Assert.Equal(5, CustomActions.HealthProbeTimeout.TotalSeconds);
+            // CR-04: raised 5s → 30s to absorb cold-start latency between SCM Running
+            // and HttpListener bind. ProbeHealth now also retries up to 5 attempts.
+            Assert.Equal(30, CustomActions.HealthProbeTimeout.TotalSeconds);
+        }
+
+        [Fact]
+        public void HealthProbeMaxAttempts_IsFive()
+        {
+            // CR-04: retry budget for transient ConnectionRefused / Timeout.
+            Assert.Equal(5, CustomActions.HealthProbeMaxAttempts);
+        }
+
+        [Fact]
+        public void HealthUrl_MatchesAgentConfigDefault()
+        {
+            // WARN-08: HealthUrl must track AgentConfig.Http default port. If AgentConfig
+            // default port changes, this test catches the drift.
+            var expected = $"http://{new FingerprintAgent.Configuration.HttpConfig().Host}:{new FingerprintAgent.Configuration.HttpConfig().Port}/health";
+            Assert.Equal(expected, CustomActions.HealthUrl);
         }
 
         [Fact]

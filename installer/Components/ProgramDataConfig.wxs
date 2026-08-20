@@ -10,7 +10,8 @@
     D-34  config.template.json shipped in INSTALLFOLDER as read-only reference
     D-36  First install seeds ProgramData config from template (via SeedProgramDataConfig CA)
 -->
-<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
+     xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
 
   <Fragment>
     <DirectoryRef Id="PROGRAMDATAFOLDER">
@@ -19,10 +20,17 @@
         D-33/D-36/D-37: ProgramData\FingerprintAgent directory.
         NOT KeyPath because SeedProgramDataConfig CA seeds the file at install time —
         the directory itself just needs to exist (CreateFolder handles that).
+
+        WARN-09: restrict ACL to SYSTEM (full, service runs as LocalSystem per
+        Service.wxs:49), Administrators (full, for IT maintenance), and Users (read,
+        for operator diagnostics). Previous "Everyone:GenericAll" allowed any local
+        user to modify config.json and trigger an auto-update to a malicious repo.
       -->
       <Component Id="cmp_ProgramDataDir" Guid="{D2E3F4A5-6B7C-8D9E-0F1A-2B3C4D5E6F7A}" Win64="no">
         <CreateFolder Directory="PROGRAMDATAFOLDER">
-          <util:PermissionEx User="Everyone" GenericAll="yes" />
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" />
         </CreateFolder>
         <RemoveFolder Id="rmv_ProgramDataDir" On="uninstall" />
       </Component>
@@ -31,10 +39,14 @@
         D-28: Logs directory preserved on uninstall (Permanent=yes).
         AgentLogger creates the directory at runtime via Directory.CreateDirectory.
         We declare a Component for the dir with Permanent=yes so uninstall leaves it alone.
+
+        WARN-09: same restricted ACL as the parent ProgramData directory.
       -->
       <Component Id="cmp_LogsDir" Guid="{E3F4A5B6-7C8D-9E0F-1A2B-3C4D5E6F7A8B}" Win64="no" Permanent="yes">
         <CreateFolder Directory="LOGS_DIR_PLACEHOLDER">
-          <util:PermissionEx User="Everyone" GenericAll="yes" />
+          <util:PermissionEx User="SYSTEM" GenericAll="yes" />
+          <util:PermissionEx User="Administrators" GenericAll="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" />
         </CreateFolder>
       </Component>
 
