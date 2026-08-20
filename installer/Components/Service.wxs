@@ -70,10 +70,5 @@
 
     </DirectoryRef>
 
-    <ComponentGroup Id="ServiceComponents">
-      <ComponentRef Id="cmp_Binaries" />
-      <ComponentRef Id="cmp_Service" />
-    </ComponentGroup>
-
   </Fragment>
 </Wix>

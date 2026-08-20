@@ -81,9 +81,7 @@
              Level="1"
              Absent="disallow">
       <ComponentGroupRef Id="ProductComponents" />
-      <ComponentGroupRef Id="ServiceComponents" />
       <ComponentGroupRef Id="ProgramDataComponents" />
-      <ComponentRef Id="EventLogSource" />
     </Feature>
 
     <!-- D-08: minimal UI supporting msiexec /qn silent install -->
@@ -151,12 +149,9 @@
     </InstallUISequence>
 
     <!-- ComponentGroupRef declarations pulled in from Components/*.wxs -->
-    <DirectoryRef Id="INSTALLFOLDER">
-      <ComponentGroupRef Id="ProductComponents" />
-    </DirectoryRef>
 
     <!--
-      Directory tree. INSTALLFOLDER is referenced by Components/Service.wxs.
+      Directory tree. INSTALLFOLDER is referenced by Components/ProductComponents.wxs.
       PROGRAMDATAFOLDER is referenced by Components/ProgramDataConfig.wxs.
     -->
     <Directory Id="TARGETDIR" Name="SourceDir">

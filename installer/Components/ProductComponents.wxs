@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!--
+  ProductComponents.wxs — Master ComponentGroup aggregating INSTALLFOLDER-resident
+  Components for the Feature.
+
+  BACKGROUND (I-1)
+    FingerprintAgent.Installer.wxs:83 references <ComponentGroupRef Id="ProductComponents"/>
+    but no .wxs file ever defined a ComponentGroup with that Id. WiX 3.x light.exe
+    fails the link with LGHT0094 ("Undefined preprocessor variable '$(var.ProductComponents)'")
+    because $(var.X) lookup requires the symbol to be defined.
+
+    Earlier code split the INSTALLFOLDER components between ServiceComponents and an
+    ad-hoc EventLogSource ComponentRef. Consolidating them under ProductComponents
+    gives the Feature a single entry point and removes the dangling reference.
+
+  SCOPE
+    ProductComponents contains:
+      - cmp_Binaries           (binaries + config.template.json) — INSTALLFOLDER
+      - cmp_Service            (service registration)            — INSTALLFOLDER
+      - EventLogSource         (EventLog source registration)    — INSTALLFOLDER-adjacent
+      - UninstallBehaviorComponents (conditional log cleanup on REMOVE_LOGS=1)
+
+    ProgramDataComponents is intentionally NOT here — it lives under a different
+    DirectoryRef (PROGRAMDATAFOLDER) and is referenced separately from the Feature.
+-->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <ComponentGroup Id="ProductComponents">
+        <ComponentRef Id="cmp_Binaries" />
+        <ComponentRef Id="cmp_Service" />
+        <ComponentRef Id="EventLogSource" />
+        <ComponentGroupRef Id="UninstallBehaviorComponents" />
+      </ComponentGroup>
+    </DirectoryRef>
+  </Fragment>
+
+</Wix>
