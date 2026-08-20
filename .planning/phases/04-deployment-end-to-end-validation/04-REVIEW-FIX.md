@@ -57,18 +57,28 @@ Both seams are additive — production behavior is unchanged. They only activate
 
 ## Skipped Items
 
-### WR-01 — WiX 3.14.1 SHA256 placeholder — **NOT CODE-FIXABLE**
+### WR-01 — WiX 3.14.1 SHA256 placeholder — **RESOLVED 2026-08-20 (operator action)**
 
 **File:** `.github/workflows/release.yml:78` and `.github/workflows/e2e.yml:65`
 **Severity:** Warning (carry-over from WARN-05; flagged as WR-01 in iteration 2)
-**Reason skipped:** Operator action required. The verification code is correctly wired (mismatches hard-fail at line 85), but the comparison value is an all-zeros sentinel placeholder. The agent cannot compute the real `wix3141rtm.zip` SHA256 — that requires downloading the artifact from https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm on a machine with internet access and pasting the 64-character hex into both workflow files.
+**Resolution:** Operator (this session) downloaded `wix314-binaries.zip` from https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/ and computed the SHA256 hash via `(Get-FileHash -Algorithm SHA256 wix314-binaries.zip).Hash`. Pinned value:
 
-**Outstanding action (~5 minutes):**
+```
+6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31
+```
+
+**Commit:** (this commit — `fix(04): wire real wix3141rtm SHA256 hash in release.yml + e2e.yml`)
+**Files changed:**
+- `.github/workflows/release.yml` — placeholder → real hash (+ provenance comment)
+- `.github/workflows/e2e.yml` — placeholder → real hash (+ provenance comment)
+
+**Effect:** SHA256 verification is now ACTIVE. Any future WiX 3.x patch release that changes the binary hash will fail the build (`Write-Error` exits 1 at line 85/72). Supply-chain attack via DNS hijack or compromised GitHub release is now detectable and blocked.
+
+**Verification command (for future upgrades):**
 ```powershell
-Invoke-WebRequest https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip -OutFile wix.zip
+Invoke-WebRequest https://github.com/wixtoolset/wix3/releases/download/<NEW_TAG>/wix314-binaries.zip -OutFile wix.zip
 (Get-FileHash -Algorithm SHA256 wix.zip).Hash
 ```
-Paste result into `release.yml:78` AND `e2e.yml:65`. This was already documented in iteration 1's REVIEW-FIX.md §Recommendations-1 and re-confirmed in iteration 2's REVIEW.md §Verification-Recommendations-1.
 
 ## Final Verification
 
@@ -78,13 +88,13 @@ Paste result into `release.yml:78` AND `e2e.yml:65`. This was already documented
 
 ## Conclusion
 
-**PASS** — All code-fixable Critical/Warning findings resolved across iterations 1–3. The single operator-action item (WR-01 WiX SHA256 placeholder) is documented above with exact paste instructions and remains the only blocker between this branch and a v1.0 release tag.
+**PASS — Phase 4 ready for v1.0 tag.** All Critical (7) and Warning (11) findings resolved across iterations 1–3, plus the single operator-action item (WR-01 WiX SHA256 pin) wired with the verified hash. Zero remaining blockers.
 
 **Status:** `clean`
 
 ---
 
 _Fixed: 2026-08-20_
-_Fixer: the agent (gsd-code-fixer)_
-_Iteration: 3 (final)_
-_Commit: `531d100`_
+_Fixer: the agent (gsd-code-fixer) + operator (WR-01 hash pin)_
+_Iterations: 1–3 (final)_
+_Commits: `2530d3d`, `970ffbd`, `a4fa170`, `733d5b0`, `e873ab8`, `37e7c4a`, `89e9264`, `b139486`, `ae7ab28`, `9400cdc`, `531d100` + operator commit for WR-01_

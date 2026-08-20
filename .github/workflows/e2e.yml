@@ -62,7 +62,10 @@ jobs:
           $wixZip = "wix314-binaries.zip"
           $wixUrl = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/$wixZip"
           $installDir = "C:\wix314"
-          $expectedSha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+          # SHA256 of wix3141rtm wix314-binaries.zip (verified 2026-08-19).
+          # Source: https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm
+          # Verify locally with: (Get-FileHash -Algorithm SHA256 wix314-binaries.zip).Hash
+          $expectedSha256 = "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31"
           Write-Host "Downloading WiX 3.14.1 from $wixUrl"
           Invoke-WebRequest -Uri $wixUrl -OutFile $wixZip
           $actualSha256 = (Get-FileHash -Algorithm SHA256 $wixZip).Hash.ToLower()
