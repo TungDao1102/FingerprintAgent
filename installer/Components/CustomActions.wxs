@@ -85,5 +85,19 @@
                   Execute="rollback"
                   Return="ignore" />
 
+    <!--
+      StartServiceOnRollback (WARN-10): on a failed UPGRADE, StopRunningService already
+      stopped the old service before InstallFiles. If the upgrade fails and rolls back,
+      files are restored but the service remains stopped — operator sees "install
+      succeeded" (no failure surfaced) and the service won't restart until manual action.
+      This CA starts the (now-restored) service in the rollback path. Always Success:
+      failure to start logs but doesn't break the rollback.
+    -->
+    <CustomAction Id="StartServiceOnRollback"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="StartServiceAfterRollback"
+                  Execute="rollback"
+                  Return="ignore" />
+
   </Fragment>
 </Wix>

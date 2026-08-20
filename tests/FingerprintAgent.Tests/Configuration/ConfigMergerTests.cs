@@ -184,5 +184,64 @@ namespace FingerprintAgent.Tests.Configuration
             Assert.Contains("c", addedKeys);
             Assert.DoesNotContain("b", addedKeys);
         }
+
+        [Fact]
+        public void Merge_UserMissingArrayElement_AppendedToUserArray()
+        {
+            // Arrange — WARN-01: template ships new vendors in scanner.priority, user
+            // has older list. Element-wise merge must append template-only elements
+            // to the end (preserve user order at the head).
+            var user = JObject.Parse("{ \"priority\": [\"ZKTeco\"] }");
+            var template = JObject.Parse("{ \"priority\": [\"ZKTeco\", \"SecuGen\", \"Futronic\", \"DigitalPersona\"] }");
+
+            // Act
+            var (merged, addedKeys) = ConfigMerger.Merge(user, template);
+
+            // Assert
+            var arr = (JArray)merged["priority"];
+            Assert.Equal(4, arr.Count);
+            Assert.Equal("ZKTeco", (string)arr[0]);     // user order preserved
+            Assert.Equal("SecuGen", (string)arr[1]);    // appended
+            Assert.Equal("Futronic", (string)arr[2]);   // appended
+            Assert.Equal("DigitalPersona", (string)arr[3]); // appended
+            Assert.Single(addedKeys);
+            Assert.Contains("priority", addedKeys);
+        }
+
+        [Fact]
+        public void Merge_UserHasAllArrayElements_NoAppend()
+        {
+            // Arrange — user has all template elements; nothing to add.
+            var user = JObject.Parse("{ \"priority\": [\"ZKTeco\", \"SecuGen\", \"Futronic\", \"DigitalPersona\"] }");
+            var template = JObject.Parse("{ \"priority\": [\"ZKTeco\", \"SecuGen\", \"Futronic\", \"DigitalPersona\"] }");
+
+            // Act
+            var (merged, addedKeys) = ConfigMerger.Merge(user, template);
+
+            // Assert
+            Assert.Equal(4, ((JArray)merged["priority"]).Count);
+            Assert.Empty(addedKeys);
+        }
+
+        [Fact]
+        public void Merge_UserHasExtraArrayElements_Preserved()
+        {
+            // Arrange — user added a vendor that's not in the template (e.g. a custom
+            // scanner adapter). Element-wise merge must NOT remove user-only elements.
+            var user = JObject.Parse("{ \"priority\": [\"ZKTeco\", \"MyCustomVendor\"] }");
+            var template = JObject.Parse("{ \"priority\": [\"ZKTeco\", \"SecuGen\"] }");
+
+            // Act
+            var (merged, addedKeys) = ConfigMerger.Merge(user, template);
+
+            // Assert
+            var arr = (JArray)merged["priority"];
+            Assert.Equal(3, arr.Count);
+            Assert.Equal("ZKTeco", (string)arr[0]);
+            Assert.Equal("MyCustomVendor", (string)arr[1]); // user-added, preserved
+            Assert.Equal("SecuGen", (string)arr[2]);        // template-only, appended
+            Assert.Single(addedKeys);
+            Assert.Contains("priority", addedKeys);
+        }
     }
 }

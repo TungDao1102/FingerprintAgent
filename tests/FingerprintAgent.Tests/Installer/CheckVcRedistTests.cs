@@ -68,8 +68,10 @@ namespace FingerprintAgent.Tests.Installer
         {
             // WARN-08: HealthUrl must track AgentConfig.Http default port. If AgentConfig
             // default port changes, this test catches the drift.
-            var expected = $"http://{new FingerprintAgent.Configuration.HttpConfig().Host}:{new FingerprintAgent.Configuration.HttpConfig().Port}/health";
-            Assert.Equal(expected, CustomActions.HealthUrl);
+            var httpConfig = new FingerprintAgent.Configuration.HttpConfig();
+            var expectedUrl = $"http://{httpConfig.Host}:{httpConfig.Port}/health";
+            var actualUrl = CustomActions.HealthUrl;
+            Assert.Equal(expectedUrl, actualUrl);
         }
 
         [Fact]

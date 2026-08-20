@@ -411,6 +411,57 @@ namespace FingerprintAgent.Installer
             }
         }
 
+        /// <summary>
+        /// WARN-10: Re-starts the service in the rollback path. On a failed upgrade,
+        /// StopRunningService stopped the old service before InstallFiles. If the upgrade
+        /// rolls back, files are restored to the prior version but the service stays
+        /// stopped. This CA starts it back up so the operator sees a working service
+        /// (with the OLD code) instead of "install succeeded but service won't start".
+        ///
+        /// Always returns Success — failure to start is logged but does not block the
+        /// rollback (which has already restored files and is essentially complete).
+        /// </summary>
+        [CustomAction]
+        public static ActionResult StartServiceAfterRollback(Session session)
+        {
+            session.Log(LogPrefix + "WARN-10: restart FingerprintAgent service after rollback...");
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "sc.exe",
+                    Arguments = "start FingerprintAgent",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null)
+                    {
+                        session.Log(LogPrefix + "StartServiceAfterRollback: sc.exe could not be launched");
+                        return ActionResult.Success;
+                    }
+                    if (!p.WaitForExit(30000))
+                    {
+                        session.Log(LogPrefix + "StartServiceAfterRollback: sc.exe start timed out after 30s");
+                        try { p.Kill(); } catch { }
+                    }
+                    else
+                    {
+                        session.Log(LogPrefix + "StartServiceAfterRollback: sc.exe start exited with code " + p.ExitCode);
+                    }
+                }
+                return ActionResult.Success;
+            }
+            catch (Exception ex)
+            {
+                session.Log(LogPrefix + "StartServiceAfterRollback failed: " + ex.Message + " (continuing)");
+                return ActionResult.Success;
+            }
+        }
+
         // -----------------------------------------------------------------------
         // Probe types
         // -----------------------------------------------------------------------

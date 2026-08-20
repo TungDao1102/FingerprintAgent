@@ -70,6 +70,37 @@ namespace FingerprintAgent.Configuration
                         // Both objects → recurse to merge nested keys
                         MergeInto(userChild, templateChild, fullKey, added);
                     }
+                    else if (userValue is JArray userArray
+                        && templateValue is JArray templateArray)
+                    {
+                        // WARN-01: arrays merge element-wise. Preserve user order, append
+                        // any template-only elements to the end. Without this, template
+                        // upgrades that add a new scanner vendor (e.g. adding "Futronic")
+                        // silently lose the addition because the user config keeps its
+                        // older array verbatim.
+                        int addedCount = 0;
+                        foreach (var templateElem in templateArray)
+                        {
+                            bool found = false;
+                            foreach (var userElem in userArray)
+                            {
+                                if (JToken.DeepEquals(userElem, templateElem))
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found)
+                            {
+                                userArray.Add(templateElem.DeepClone());
+                                addedCount++;
+                            }
+                        }
+                        if (addedCount > 0)
+                        {
+                            added.Add(fullKey);
+                        }
+                    }
                     // Else: user has a value of a different type, or a scalar that conflicts
                     // with template → preserve user's choice (D-35).
                 }
