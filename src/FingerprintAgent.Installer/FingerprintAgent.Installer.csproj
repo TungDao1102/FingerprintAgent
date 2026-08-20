@@ -5,7 +5,15 @@
     <OutputType>Library</OutputType>
     <RootNamespace>FingerprintAgent.Installer</RootNamespace>
     <AssemblyName>FingerprintAgent.Installer</AssemblyName>
-    <PlatformTarget>x86</PlatformTarget>
+	<!--
+    Force x86 for ALL configurations because MakeSfxCA.exe (WiX DTF 4.0.4) is itself an x86
+    native binary invoked at the end of build to wrap the managed DLL into the MSI type-1
+    CA binary (FingerprintAgent.Installer.CA.dll). Running it under AnyCPU/x64 throws
+    "MakeSfxCA.exe exited with code 1". Pinning PlatformTarget=x86 unconditionally here
+    keeps the .sln mappings (Debug|x86 / Release|x86) valid AND makes the build portable
+    across solution-level platforms.
+    -->
+	<PlatformTarget>x86</PlatformTarget>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <!-- D-07: MSI is unsigned in v1 -->
     <SignAssembly>false</SignAssembly>
