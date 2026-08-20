@@ -152,6 +152,7 @@ namespace FingerprintAgent.Service
             {
                 _updateCheckService?.Stop();
                 _updateCheckService?.Dispose();
+                _updateCheckService = null;
             }
             catch (Exception ex)
             {
