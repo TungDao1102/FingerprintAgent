@@ -14,8 +14,9 @@ namespace FingerprintAgent.Tests.Installer
     /// <summary>
     /// Tests for CustomActions.ProbeHealth — the pure-logic HTTP probe helper that
     /// classifies /health responses into Healthy / DegradedScannerMissing / Unhealthy /
-    /// Timeout / ConnectionRefused. Uses a real HttpListener on a random port (no
-    /// port conflicts) to avoid mocking System.Net.Http.
+    /// Timeout / ConnectionRefused. Uses ClassifyHealthResponse (extracted from
+    /// ProbeHealthSingleAttempt) so tests exercise the actual classifier instead of
+    /// re-implementing it via a duplicated ProbeUrl helper.
     /// </summary>
     public class ProbeHealthTests : IDisposable
     {
@@ -85,102 +86,66 @@ namespace FingerprintAgent.Tests.Installer
             }
         }
 
-        // The test calls ProbeHealth at a hard-coded URL (127.0.0.1:5043). We need to either
-        // bind that port, or refactor ProbeHealth to accept a URL. Refactoring is cleaner.
-        // Since we can't easily change production code's hardcoded URL, we'll spin up our
-        // own HttpListener here for direct classification tests via internal helpers.
-        //
-        // Actually, we DO want to test ProbeHealth() — which calls HealthUrl = "127.0.0.1:5043".
-        // For deterministic tests we'll exercise the underlying classification via a tiny
-        // shim that accepts an HTTP URL.
-
-        private static CustomActions.HealthProbeResult ProbeUrl(string url, int timeoutMs = 2000)
-        {
-            using (var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) })
-            {
-                try
-                {
-                    var task = client.GetAsync(url);
-                    if (!task.Wait(timeoutMs))
-                        return new CustomActions.HealthProbeResult(CustomActions.HealthProbeOutcome.Timeout, null, null);
-                    var response = task.Result;
-                    int status = (int)response.StatusCode;
-                    string body = null;
-                    try
-                    {
-                        var bodyTask = response.Content.ReadAsStringAsync();
-                        bodyTask.Wait(TimeSpan.FromSeconds(2));
-                        body = bodyTask.Result;
-                    }
-                    catch { }
-                    if (response.IsSuccessStatusCode)
-                        return new CustomActions.HealthProbeResult(CustomActions.HealthProbeOutcome.Healthy, status, body);
-                    if (status == 503)
-                        return new CustomActions.HealthProbeResult(CustomActions.HealthProbeOutcome.DegradedScannerMissing, status, body);
-                    return new CustomActions.HealthProbeResult(CustomActions.HealthProbeOutcome.Unhealthy, status, body);
-                }
-                catch (AggregateException)
-                {
-                    return new CustomActions.HealthProbeResult(CustomActions.HealthProbeOutcome.ConnectionRefused, null, null);
-                }
-                catch (HttpRequestException)
-                {
-                    return new CustomActions.HealthProbeResult(CustomActions.HealthProbeOutcome.ConnectionRefused, null, null);
-                }
-            }
-        }
-
         [Fact]
-        public void Healthy_200_ClassifiedAsHealthy()
+        public void Classify_200_ClassifiedAsHealthy()
         {
-            _responseStatus = 200;
-            _responseBody = @"{ ""status"": ""healthy"" }";
-            var result = ProbeUrl(_prefix + "health");
+            var result = CustomActions.ClassifyHealthResponse(200, @"{ ""status"": ""healthy"" }", null);
             Assert.Equal(CustomActions.HealthProbeOutcome.Healthy, result.Outcome);
             Assert.Equal(200, result.HttpStatus);
         }
 
         [Fact]
-        public void Degraded_503_ClassifiedAsDegradedScannerMissing()
+        public void Classify_503_ClassifiedAsDegradedScannerMissing()
         {
-            _responseStatus = 503;
-            _responseBody = @"{ ""status"": ""degraded"" }";
-            var result = ProbeUrl(_prefix + "health");
+            var result = CustomActions.ClassifyHealthResponse(503, @"{ ""status"": ""degraded"" }", null);
             Assert.Equal(CustomActions.HealthProbeOutcome.DegradedScannerMissing, result.Outcome);
             Assert.Equal(503, result.HttpStatus);
         }
 
         [Fact]
-        public void Unhealthy_500_ClassifiedAsUnhealthy()
+        public void Classify_500_ClassifiedAsUnhealthy()
         {
-            _responseStatus = 500;
-            _responseBody = "internal error";
-            var result = ProbeUrl(_prefix + "health");
+            var result = CustomActions.ClassifyHealthResponse(500, "internal error", null);
             Assert.Equal(CustomActions.HealthProbeOutcome.Unhealthy, result.Outcome);
             Assert.Equal(500, result.HttpStatus);
         }
 
         [Fact]
-        public void ConnectionRefused_ClosedPort_ClassifiedAsConnectionRefused()
+        public void Classify_NullStatus_ClassifiedAsTimeout()
         {
-            int port = 0;
-            foreach (int candidate in new[] { 65500, 65510, 65520, 65530, 65400 })
-            {
-                try
-                {
-                    var tcp = new System.Net.Sockets.TcpListener(IPAddress.Loopback, candidate);
-                    tcp.Start();
-                    tcp.Stop();
-                    port = candidate;
-                    break;
-                }
-                catch { }
-            }
-            Assert.NotEqual(0, port);
-            // Brief pause: TcpListener.Stop on Windows can leave port in TIME_WAIT briefly.
-            System.Threading.Thread.Sleep(100);
-            var result = ProbeUrl("http://127.0.0.1:" + port + "/health", timeoutMs: 5000);
+            var result = CustomActions.ClassifyHealthResponse(null, null, null);
+            Assert.Equal(CustomActions.HealthProbeOutcome.Timeout, result.Outcome);
+            Assert.Null(result.HttpStatus);
+        }
+
+        [Fact]
+        public void Classify_NegativeStatus_ClassifiedAsTimeout()
+        {
+            var result = CustomActions.ClassifyHealthResponse(-1, null, null);
+            Assert.Equal(CustomActions.HealthProbeOutcome.Timeout, result.Outcome);
+            Assert.Null(result.HttpStatus);
+        }
+
+        [Fact]
+        public void Classify_HttpRequestException_ClassifiedAsConnectionRefused()
+        {
+            var result = CustomActions.ClassifyHealthResponse(null, null, new HttpRequestException("refused"));
             Assert.Equal(CustomActions.HealthProbeOutcome.ConnectionRefused, result.Outcome);
+            Assert.Null(result.HttpStatus);
+        }
+
+        [Fact]
+        public void Classify_AggregateException_ClassifiedAsConnectionRefused()
+        {
+            var result = CustomActions.ClassifyHealthResponse(null, null, new AggregateException());
+            Assert.Equal(CustomActions.HealthProbeOutcome.ConnectionRefused, result.Outcome);
+        }
+
+        [Fact]
+        public void Classify_OtherException_ClassifiedAsUnhealthy()
+        {
+            var result = CustomActions.ClassifyHealthResponse(null, null, new InvalidOperationException("boom"));
+            Assert.Equal(CustomActions.HealthProbeOutcome.Unhealthy, result.Outcome);
         }
 
         [Fact]

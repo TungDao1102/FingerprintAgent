@@ -114,6 +114,26 @@ echo %ERRORLEVEL%
 msiexec /qn /x FingerprintAgent-Setup.msi /l*v uninstall.log
 ```
 
+### Lưu ý: hộp thoại tiếng Việt chỉ hiện ở chế độ tương tác
+
+Hộp thoại cảnh báo tiếng Việt khi thiếu Visual C++ (x86) chỉ hiện khi cài
+đặt tương tác (chạy MSI bằng cách nhấp đúp). Khi triển khai với `/qn`, msiexec
+bỏ qua toàn bộ chuỗi UI, không hiện hộp thoại — install sẽ thất bại ngay với
+mã thoát 1603 và ghi `VcRedistMissingDialog=1` vào log. Trước khi triển khai
+silent cho máy mới, hãy:
+
+1. Cài VC++ x86 trước bằng GPO/SCCM:
+   ```cmd
+   vc_redist.x86.exe /quiet /norestart
+   ```
+2. Hoặc dùng script PowerShell kiểm tra registry trước khi gọi `msiexec`:
+   ```powershell
+   if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86')) {
+       Write-Error 'VC++ x86 missing — aborting'
+       exit 1
+   }
+   ```
+
 ---
 
 ## 4. Kiểm tra sau cài đặt (Post-install verification)

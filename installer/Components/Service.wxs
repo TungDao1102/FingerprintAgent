@@ -33,12 +33,11 @@
       <!-- Service registration via WiX (D-19) -->
       <Component Id="cmp_Service" Guid="{C1D2E3F4-5A6B-7C8D-9E0F-1A2B3C4D5E6F}" Win64="no">
         <CreateFolder />
-        <util:EventSource Name="FingerprintAgent"
-                          EventLogFile="Application"
-                          CategoryMessageFile="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.exe"
-                          SupportsErrors="yes"
-                          SupportsInformationals="yes"
-                          SupportsWarnings="yes" />
+        <!--
+          Important finding: util:EventSource registration moved to EventLogSource
+          Component in ProgramDataConfig.wxs (the canonical location). Removing the
+          duplicate here prevents two registry entries for the same EventLog source.
+        -->
 
         <ServiceInstall Id="svc_FingerprintAgent"
                         Name="FingerprintAgent"

@@ -35,6 +35,8 @@ namespace FingerprintAgent.Installer
         // D-05: /health probe URL matches HttpServer defaults (127.0.0.1:5043).
         internal const string HealthUrl = "http://127.0.0.1:5043/health";
 
+        internal const string ServiceName = "FingerprintAgent";
+
         // CR-04: 30s timeout + multi-attempt retry absorbs cold-start latency (JIT, scanner
         // SDK load) on first install. Original 5s timeout caused false-positive rollbacks
         // when the HttpListener bound milliseconds-to-seconds after SCM reported Running.
@@ -93,22 +95,28 @@ namespace FingerprintAgent.Installer
         /// Returns true if found, plus the key path where it was found.
         /// Exposed as internal static so tests can exercise registry logic without a Session.
         /// </summary>
-        internal static bool IsVcRedistInstalled(out string foundKey)
+        internal static bool IsVcRedistInstalled(out string foundKey, Func<string, object> registryReader = null)
         {
+            registryReader = registryReader ?? DefaultRegistryReader;
             foreach (var key in VcRedistRegistryKeys)
             {
-                using (var reg = Registry.LocalMachine.OpenSubKey(key))
+                var installed = registryReader(key);
+                if (installed != null && Convert.ToInt32(installed) == 1)
                 {
-                    var installed = reg?.GetValue("Installed");
-                    if (installed != null && Convert.ToInt32(installed) == 1)
-                    {
-                        foundKey = key;
-                        return true;
-                    }
+                    foundKey = key;
+                    return true;
                 }
             }
             foundKey = null;
             return false;
+        }
+
+        private static object DefaultRegistryReader(string key)
+        {
+            using (var reg = Registry.LocalMachine.OpenSubKey(key))
+            {
+                return reg?.GetValue("Installed");
+            }
         }
 
         // -----------------------------------------------------------------------
@@ -190,7 +198,7 @@ namespace FingerprintAgent.Installer
                     task.Wait(HealthProbeTimeout);
                     if (!task.IsCompleted)
                     {
-                        return new HealthProbeResult(HealthProbeOutcome.Timeout, null, null);
+                        return ClassifyHealthResponse(TimeoutOutcome(), null, null);
                     }
                     var response = task.Result;
                     int status = (int)response.StatusCode;
@@ -205,32 +213,57 @@ namespace FingerprintAgent.Installer
                     {
                         // Body read failure is non-fatal — classification based on status only.
                     }
-
-                    if (response.IsSuccessStatusCode)
-                    {
-                        return new HealthProbeResult(HealthProbeOutcome.Healthy, status, body);
-                    }
-                    if (status == 503)
-                    {
-                        // 503 from HealthHandler when scanner is in max backoff (D-38).
-                        // Body should contain "degraded" — accept either way for v1.
-                        return new HealthProbeResult(HealthProbeOutcome.DegradedScannerMissing, status, body);
-                    }
-                    return new HealthProbeResult(HealthProbeOutcome.Unhealthy, status, body);
+                    return ClassifyHealthResponse(status, body, null);
                 }
-                catch (AggregateException)
+                catch (AggregateException ex)
                 {
-                    return new HealthProbeResult(HealthProbeOutcome.ConnectionRefused, null, null);
+                    return ClassifyHealthResponse(null, null, ex);
                 }
-                catch (HttpRequestException)
+                catch (HttpRequestException ex)
                 {
-                    return new HealthProbeResult(HealthProbeOutcome.ConnectionRefused, null, null);
+                    return ClassifyHealthResponse(null, null, ex);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    return new HealthProbeResult(HealthProbeOutcome.Unhealthy, null, null);
+                    return ClassifyHealthResponse(null, null, ex);
                 }
             }
+        }
+
+        private static int TimeoutOutcome() => -1;
+
+        /// <summary>
+        /// Pure logic helper. Classifies an HTTP probe result into a HealthProbeOutcome.
+        /// Exposed as internal static so tests can exercise the classifier without spinning
+        /// up an HttpListener or depending on the hardcoded HealthUrl.
+        /// </summary>
+        /// <param name="status">HTTP status code, or -1 / null if the request did not complete.</param>
+        /// <param name="body">Response body, or null if the request did not complete.</param>
+        /// <param name="ex">Exception thrown by the HTTP call, or null on success.</param>
+        internal static HealthProbeResult ClassifyHealthResponse(int? status, string body, Exception ex)
+        {
+            if (ex is AggregateException || ex is HttpRequestException)
+            {
+                return new HealthProbeResult(HealthProbeOutcome.ConnectionRefused, null, null);
+            }
+            if (ex != null)
+            {
+                return new HealthProbeResult(HealthProbeOutcome.Unhealthy, null, null);
+            }
+            if (!status.HasValue || status.Value < 0)
+            {
+                return new HealthProbeResult(HealthProbeOutcome.Timeout, null, null);
+            }
+            if (status >= 200 && status < 300)
+            {
+                return new HealthProbeResult(HealthProbeOutcome.Healthy, status.Value, body);
+            }
+            if (status == 503)
+            {
+                // 503 from HealthHandler when scanner is in max backoff (D-38).
+                return new HealthProbeResult(HealthProbeOutcome.DegradedScannerMissing, status.Value, body);
+            }
+            return new HealthProbeResult(HealthProbeOutcome.Unhealthy, status.Value, body);
         }
 
         // -----------------------------------------------------------------------
@@ -295,7 +328,8 @@ namespace FingerprintAgent.Installer
             // First install: seed ProgramData from template.
             if (!File.Exists(programDataConfigPath))
             {
-                File.Copy(installTemplatePath, programDataConfigPath);
+                string templateText = File.ReadAllText(installTemplatePath);
+                AtomicFileWriter.WriteAllText(programDataConfigPath, templateText);
                 return "Seeded ProgramData config from template (first install)";
             }
 
@@ -379,7 +413,7 @@ namespace FingerprintAgent.Installer
                 var psi = new ProcessStartInfo
                 {
                     FileName = "sc.exe",
-                    Arguments = "stop FingerprintAgent",
+                    Arguments = "stop " + ServiceName,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
@@ -430,7 +464,7 @@ namespace FingerprintAgent.Installer
                 var psi = new ProcessStartInfo
                 {
                     FileName = "sc.exe",
-                    Arguments = "start FingerprintAgent",
+                    Arguments = "start " + ServiceName,
                     UseShellExecute = false,
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,

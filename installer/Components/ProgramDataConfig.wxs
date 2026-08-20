@@ -59,7 +59,7 @@
 
     <!--
       EventLog source — declared as a top-level Component (not nested under INSTALLFOLDER).
-      Created during install via the util:EventSource reference in Service.wxs, removed on uninstall.
+      Created during install via util:EventSource, removed on uninstall via RemoveOnUninstall.
     -->
     <Component Id="EventLogSource" Guid="{F4A5B6C7-8D9E-0F1A-2B3C-4D5E6F7A8B9C}" Win64="no">
       <util:EventSource Name="FingerprintAgent"
@@ -68,7 +68,6 @@
                         SupportsErrors="yes"
                         SupportsInformationals="yes"
                         SupportsWarnings="yes" />
-      <RemoveFile Id="rmv_EventLogSource" On="uninstall" Name="FingerprintAgent" />
     </Component>
 
   </Fragment>

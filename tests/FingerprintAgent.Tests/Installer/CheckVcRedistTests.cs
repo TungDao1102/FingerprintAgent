@@ -1,5 +1,6 @@
 extern alias WixCA;
 
+using System;
 using Xunit;
 using CustomActions = WixCA::FingerprintAgent.Installer.CustomActions;
 
@@ -16,20 +17,48 @@ namespace FingerprintAgent.Tests.Installer
     public class CheckVcRedistTests
     {
         [Fact]
-        public void RegistryKeys_ContainsBothExpectedPaths()
+        public void RegistryKeys_AreBothWow6432AndNativePaths()
         {
-            Assert.Contains(@"SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86", CustomActions.VcRedistRegistryKeys);
-            Assert.Contains(@"SOFTWARE\Wow6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86", CustomActions.VcRedistRegistryKeys);
+            // If either path is dropped, CheckVcRedist silently fails on that OS variant.
+            Assert.Equal(2, CustomActions.VcRedistRegistryKeys.Length);
+            Assert.Contains(CustomActions.VcRedistRegistryKeys,
+                k => k.Contains(@"Wow6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86"));
+            Assert.Contains(CustomActions.VcRedistRegistryKeys,
+                k => k.Contains(@"Microsoft\VisualStudio\14.0\VC\Runtimes\x86"));
         }
 
         [Fact]
-        public void IsVcRedistInstalled_OnDeveloperMachine_ReturnsTrue()
+        public void IsVcRedistInstalled_FakeReader_ReturnsTrueWhenInstalled()
         {
-            // Dev machines build dotnet → VC++ x86 is installed. Expect Installed=1.
-            // If this fails, VC++ x86 is genuinely missing — install vc_redist.x86.exe.
+            Func<string, object> reader = key => 1;
+            bool installed = CustomActions.IsVcRedistInstalled(out string foundKey, reader);
+            Assert.True(installed);
+            Assert.NotNull(foundKey);
+            Assert.Contains("VisualStudio\\14.0\\VC\\Runtimes\\x86", foundKey);
+        }
+
+        [Fact]
+        public void IsVcRedistInstalled_FakeReader_ReturnsFalseWhenNotInstalled()
+        {
+            Func<string, object> reader = key => 0;
+            bool installed = CustomActions.IsVcRedistInstalled(out string foundKey, reader);
+            Assert.False(installed);
+            Assert.Null(foundKey);
+        }
+
+        [Fact]
+        public void IsVcRedistInstalled_FakeReader_ReturnsFalseWhenKeysAbsent()
+        {
+            Func<string, object> reader = key => null;
+            bool installed = CustomActions.IsVcRedistInstalled(out string foundKey, reader);
+            Assert.False(installed);
+            Assert.Null(foundKey);
+        }
+
+        [Fact]
+        public void IsVcRedistInstalled_OnDeveloperMachine_DoesNotThrow()
+        {
             bool installed = CustomActions.IsVcRedistInstalled(out string foundKey);
-            // Don't Assert.True here — that would fail on a clean machine without VC++.
-            // Just verify the call completed and foundKey is consistent with the result.
             if (installed)
             {
                 Assert.NotNull(foundKey);
