@@ -204,8 +204,10 @@ namespace FingerprintAgent.Tests.Configuration
             Assert.Equal("SecuGen", (string)arr[1]);    // appended
             Assert.Equal("Futronic", (string)arr[2]);   // appended
             Assert.Equal("DigitalPersona", (string)arr[3]); // appended
-            Assert.Single(addedKeys);
-            Assert.Contains("priority", addedKeys);
+            Assert.Equal(3, addedKeys.Count);
+            Assert.Contains("priority[SecuGen]", addedKeys);
+            Assert.Contains("priority[Futronic]", addedKeys);
+            Assert.Contains("priority[DigitalPersona]", addedKeys);
         }
 
         [Fact]
@@ -241,7 +243,7 @@ namespace FingerprintAgent.Tests.Configuration
             Assert.Equal("MyCustomVendor", (string)arr[1]); // user-added, preserved
             Assert.Equal("SecuGen", (string)arr[2]);        // template-only, appended
             Assert.Single(addedKeys);
-            Assert.Contains("priority", addedKeys);
+            Assert.Contains("priority[SecuGen]", addedKeys);
         }
     }
 }
