@@ -29,10 +29,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
 
       - name: Setup .NET 9
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@9eae3fe338f7afea848fcd19cba99fdd34e92a62 # v4
         with:
           dotnet-version: '9.0.x'
 
@@ -84,7 +84,7 @@ jobs:
           }
 
       - name: Upload MSI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         with:
           name: FingerprintAgent-Setup-${{ steps.version.outputs.version }}
           path: installer/bin/Release/FingerprintAgent-Setup.msi

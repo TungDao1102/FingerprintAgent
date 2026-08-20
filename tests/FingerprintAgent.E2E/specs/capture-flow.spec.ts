@@ -58,7 +58,7 @@ test.describe('Capture flow (POST /api/capture)', () => {
             // Mime type is image/png from the mock adapter.
             expect(body.mimeType).toBe('image/png');
 
-            // SHA-256 base64 is exactly 44 characters (256 bits / 6 bits per char * 4/3 padding).
+            // SHA-256 = 32 bytes = 44 base64 chars (padded).
             expect(typeof body.verificationData).toBe('string');
             expect(body.verificationData.length).toBe(44);
 

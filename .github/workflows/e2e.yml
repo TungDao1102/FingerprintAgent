@@ -28,15 +28,15 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v4
 
       - name: Setup .NET 9
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@9eae3fe338f7afea848fcd19cba99fdd34e92a62 # v4
         with:
           dotnet-version: '9.0.x'
 
       - name: Setup Node.js 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@ae0d4ed08881f17d1511386f5be3e62356acd4a6 # v4
         with:
           node-version: '22'
 
@@ -182,7 +182,7 @@ jobs:
       # `if: always()` ensures we still get the report when tests fail.
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v4
         with:
           name: playwright-report
           path: tests/FingerprintAgent.E2E/playwright-report/

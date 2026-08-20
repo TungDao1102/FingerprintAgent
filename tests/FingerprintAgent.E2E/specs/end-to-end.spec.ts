@@ -99,7 +99,7 @@ test.describe('Browser -> agent -> backend round-trip', () => {
         expect(lastEntry.bytesLen).toBeGreaterThan(0);
         expect(typeof lastEntry.sha256).toBe('string');
         expect(lastEntry.sha256).not.toBeNull();
-        // SHA-256 base64 is 44 characters (256 bits / 6 bits * 4/3 padding).
+        // SHA-256 = 32 bytes = 44 base64 chars (padded).
         expect(lastEntry.sha256!.length).toBe(44);
     });
 

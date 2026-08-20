@@ -37,6 +37,11 @@ export interface MockBackendHandle {
 const FIXTURES_DIR = __dirname;
 const SAAS_PAGE_PATH = join(FIXTURES_DIR, 'saas-page.html');
 
+// __dirname resolves to fixtures/ when loaded by ts-node, or dist/fixtures/
+// when loaded from compiled CommonJS output. Keep SAAS_PAGE_PATH relative so a
+// future build step can copy saas-page.html alongside the compiled .js without
+// needing to update this string.
+
 function logRequest(req: IncomingMessage): void {
     // Use stderr so it doesn't get mixed with Playwright's own output if invoked via webServer.
     process.stderr.write(`[mock-backend] ${req.method} ${req.url}\n`);
