@@ -533,7 +533,9 @@ namespace FingerprintAgent.Update
                     json["update"] = update;
                 }
                 update["enabled"] = false;
-                File.WriteAllText(path, json.ToString(Newtonsoft.Json.Formatting.Indented));
+                // CR-02: atomic write — a process kill or power loss mid-WriteAllText would
+                // otherwise leave a partial config.json that bricks the service on next boot.
+                AtomicFileWriter.WriteAllText(path, json.ToString(Newtonsoft.Json.Formatting.Indented));
                 _logger?.Info(null, $"UpdateCheck: wrote update.enabled=false to {path}");
             }
             catch (Exception ex)

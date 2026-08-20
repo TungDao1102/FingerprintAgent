@@ -273,7 +273,10 @@ namespace FingerprintAgent.Installer
             var userConfig = JObject.Parse(userJsonText);
             var templateConfig = JObject.Parse(templateJsonText);
             var (merged, addedKeys) = ConfigMerger.Merge(userConfig, templateConfig);
-            File.WriteAllText(programDataConfigPath, merged.ToString(Formatting.Indented));
+            // CR-02: atomic write via shared AtomicFileWriter (linked from FingerprintAgent.Configuration).
+            // A process crash mid-write would otherwise leave a partial config.json that bricks
+            // the service on next boot.
+            AtomicFileWriter.WriteAllText(programDataConfigPath, merged.ToString(Formatting.Indented));
 
             if (addedKeys != null && addedKeys.Count > 0)
             {

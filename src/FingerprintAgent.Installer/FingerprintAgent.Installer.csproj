@@ -43,6 +43,7 @@
       no version drift between agent logic and installer logic.
     -->
     <Compile Include="..\FingerprintAgent\Configuration\ConfigMerger.cs" Link="Configuration\ConfigMerger.cs" />
+    <Compile Include="..\FingerprintAgent\Configuration\AtomicFileWriter.cs" Link="Configuration\AtomicFileWriter.cs" />
   </ItemGroup>
 
   <ItemGroup>

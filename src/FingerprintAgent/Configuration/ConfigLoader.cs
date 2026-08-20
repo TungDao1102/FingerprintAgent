@@ -70,7 +70,9 @@ namespace FingerprintAgent.Configuration
 
                     if (addedKeys.Count > 0)
                     {
-                        File.WriteAllText(
+                        // CR-02: atomic write — write to temp + rename, so a process crash
+                        // mid-write never leaves a partial config.json that bricks the service.
+                        AtomicFileWriter.WriteAllText(
                             programDataConfigPath,
                             userJson.ToString(Formatting.Indented));
 
