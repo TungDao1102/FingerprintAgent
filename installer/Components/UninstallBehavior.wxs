@@ -6,10 +6,24 @@
     D-28  Default uninstall preserves C:\ProgramData\FingerprintAgent\Logs\
           (Permanent=yes on the dir Component — see ProgramDataConfig.wxs).
     D-29  `msiexec /x <msi> REMOVE_LOGS=1` removes the Logs directory.
-          Implemented via conditional <RemoveFolder On="uninstall"> on a separate
-          ComponentRef whose Component condition evaluates REMOVE_LOGS=1.
+          Implemented via <util:RemoveFolderEx> on a Component that is always
+          installed; the CA defers its removal action to when REMOVE_LOGS is set.
     D-30  Graceful service stop handled by ServiceControl in Service.wxs.
     D-31  EventLog source removed on uninstall via util:EventSource RemoveOnUninstall.
+
+  I-3 (REMOVE_LOGS pattern)
+    Earlier code used <Condition>REMOVE_LOGS = "1"</Condition> on the Component
+    itself. That condition is evaluated at INSTALL time, so with REMOVE_LOGS empty
+    during install the Component was never installed — meaning <RemoveFolder On="uninstall">
+    could never fire (Component must be installed to participate in uninstall).
+    The escape hatch was documented but inert.
+
+    New pattern:
+      1. Install the Component unconditionally so it has presence in the package.
+      2. Use <util:RemoveFolderEx Property="REMOVE_LOGS" Directory="..."/> which
+         schedules a deferred CA that ONLY acts when REMOVE_LOGS is non-empty.
+      3. RemoveFolderEx recursively removes the directory (the original RemoveFolder
+         only removes if empty, which it never is — logs are present).
 -->
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"
      xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
@@ -17,17 +31,16 @@
   <Fragment>
 
     <!--
-      Component that removes the Logs directory only when REMOVE_LOGS=1 is set.
-      The Component is permanent (never installed) so it only fires its RemoveFolder
-      action during uninstall when the property is explicitly set.
+      Component that schedules removal of the Logs directory when REMOVE_LOGS=1.
+      The Component is always installed; util:RemoveFolderEx checks the property
+      at execution time and only acts when REMOVE_LOGS is set (which only happens
+      during uninstall when the operator explicitly passed REMOVE_LOGS=1).
     -->
     <Component Id="cmp_RemoveLogsOnUninstall"
                Guid="{A5B6C7D8-9E0F-1A2B-3C4D-5E6F7A8B9C0D}"
                Win64="no">
-      <Condition>REMOVE_LOGS = "1"</Condition>
-      <RemoveFolder Id="rmv_LogsDir_Force"
-                    Directory="LOGS_DIR_PLACEHOLDER"
-                    On="uninstall" />
+      <util:RemoveFolderEx Property="REMOVE_LOGS"
+                           Directory="LOGS_DIR_PLACEHOLDER" />
     </Component>
 
     <ComponentGroup Id="UninstallBehaviorComponents">

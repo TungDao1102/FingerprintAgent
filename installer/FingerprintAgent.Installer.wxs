@@ -124,15 +124,23 @@
       CR-04 + WARN-10: Rollback sequence. If ProbeHealthAfterInstall returns Failure,
       MSI runs the rollback sequence.
         - StopServiceOnRollback: stop the new service we just started (fresh install
-          failure path).
+          failure path — fires when `Installed` is empty during rollback).
         - StartServiceOnRollback: restart the OLD service (upgrade failure path —
-          StopRunningService already stopped it before InstallFiles).
+          StopRunningService already stopped it before InstallFiles; fires when
+          `Installed` is set and not REINSTALL).
       Both CAs are Execute="rollback" and Return="ignore", so they don't fail the
       rollback if sc.exe is unavailable.
+
+      I-4: The original conditions used `$StopServiceOnRollback = 1` which references
+      CustomActionData, but neither rollback CA declares <CustomActionData>. MSI
+      condition `$X` syntax checks CustomActionData values, not regular properties —
+      so the conditions always evaluated false and the CAs never fired. Replaced
+      with standard MSI property checks (`Installed` / `REINSTALL`) which match the
+      existing pattern used for StopRunningService (line 108).
     -->
     <InstallExecuteSequence>
-      <Custom Action="StopServiceOnRollback"><![CDATA[$StopServiceOnRollback = 1]]></Custom>
-      <Custom Action="StartServiceOnRollback"><![CDATA[$StartServiceOnRollback = 1]]></Custom>
+      <Custom Action="StopServiceOnRollback"><![CDATA[NOT Installed]]></Custom>
+      <Custom Action="StartServiceOnRollback"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
     </InstallExecuteSequence>
 
     <!-- UI sequence for Vietnamese error dialog display during interactive install -->
