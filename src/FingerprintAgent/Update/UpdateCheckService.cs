@@ -272,6 +272,17 @@ namespace FingerprintAgent.Update
             _skipEnvironmentExit = true;
         }
 
+        /// <summary>
+        /// Test-only: forces the lifecycle state without driving the public Start/Stop/Check flow.
+        /// Used by concurrency tests to put the service into Checking / Downloading / Installing
+        /// mid-cycle so the guard behaviors (CR-03 in-flight skip, CR-06 in-flight deferral) can
+        /// be asserted deterministically. Production never calls this.
+        /// </summary>
+        internal void SetStateForTest(UpdateState state)
+        {
+            lock (_lock) { _state = state; }
+        }
+
         // ===== Internals =====
 
         private void TimerCallback(object state)

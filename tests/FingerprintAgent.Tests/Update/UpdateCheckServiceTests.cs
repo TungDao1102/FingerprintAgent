@@ -450,5 +450,185 @@ namespace FingerprintAgent.Tests.Update
 
             Assert.Equal(UpdateState.Stopped, service.State);
         }
+
+        // ===== Concurrency guard tests (CR-03 / CR-05 / CR-06) =====
+
+        /// <summary>
+        /// CR-03: when the Timer fires while a TriggerImmediateCheck is already in flight,
+        /// the second TimerCallback must skip and not issue a second HTTP request. Without
+        /// the guard, two CheckForUpdateAsync invocations would race — wasted API quota,
+        /// potential double-msiexec, racing config.json writes.
+        /// </summary>
+        [Fact]
+        public async Task TriggerImmediateCheck_WhenAlreadyChecking_SkipsSecondHttpCall()
+        {
+            var config = CreateConfig(enabled: true);
+            var handler = new MockHttpMessageHandler();
+
+            // Block the first HTTP response until manually released — state stays in Checking
+            // while the gate is open, which is the window where overlapping triggers would race.
+            var gate = new TaskCompletionSource<HttpResponseMessage>();
+            handler.QueueResponseTask(
+                uri => uri.AbsolutePath.Contains("/releases/latest"),
+                gate.Task);
+
+            using (var service = CreateService(config, handler))
+            {
+                service.Start();
+
+                // First trigger: Timer fires immediately, state goes Checking, HTTP call in flight
+                service.TriggerImmediateCheck();
+                await Task.Delay(100);
+                Assert.Equal(UpdateState.Checking, service.State);
+                Assert.Equal(1, handler.CallCount);
+
+                // Subsequent triggers while first is still in flight — TimerCallback must skip
+                // because state == Checking (CR-03 in-flight guard).
+                service.TriggerImmediateCheck();
+                service.TriggerImmediateCheck();
+                service.TriggerImmediateCheck();
+                await Task.Delay(300);
+                Assert.Equal(1, handler.CallCount);
+
+                // Release the gate — first check completes
+                gate.SetResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(MakeReleaseJson("v0.0.1"))
+                });
+                await Task.Delay(200);
+
+                // Still only one HTTP call total — no overlap was permitted
+                Assert.Equal(1, handler.CallCount);
+                Assert.Equal(UpdateState.Running, service.State);
+            }
+        }
+
+        /// <summary>
+        /// CR-05: when an install fails, the service must end in Stopped state (HandleInstallFailureAsync
+        /// calls Stop()). A naive `finally` block that unconditionally restored `_state = prevState`
+        /// would leave state == Running even after Stop() — defeating the disable intent and producing
+        /// a confusing state for the next ApplyConfig cycle.
+        /// </summary>
+        [Fact]
+        public void DownloadAndInstallForTest_WhenInstallFails_FinalStateIsStopped()
+        {
+            var config = CreateConfig(enabled: true);
+            var handler = new MockHttpMessageHandler();
+            handler.QueueResponse(
+                uri => uri.Host == "mock.local",
+                HttpStatusCode.OK,
+                "FAKE_MSI_CONTENT",
+                "application/octet-stream");
+
+            // ProgramData-style config so HandleInstallFailureAsync can write update.enabled=false
+            var programDataDir = Path.Combine(_tempDir, "ProgramData-FailState", "FingerprintAgent");
+            Directory.CreateDirectory(programDataDir);
+            var configPath = Path.Combine(programDataDir, "config.json");
+            File.WriteAllText(configPath, @"{
+  ""update"": {
+    ""enabled"": true,
+    ""githubOwner"": ""testowner"",
+    ""githubRepo"": ""FingerprintAgent"",
+    ""checkIntervalHours"": 6
+  }
+}");
+
+            using (var service = CreateService(config, handler))
+            {
+                service.SetProgramDataConfigPathForTest(configPath);
+                service.InstallInstallerOverride = (url, path) =>
+                {
+                    throw new InvalidOperationException("SIMULATED_MSIEXEC_1603");
+                };
+
+                var release = new GitHubReleaseInfo
+                {
+                    TagName = "v99.99.99",
+                    Prerelease = false,
+                    Assets = new System.Collections.Generic.List<GitHubAsset>
+                    {
+                        new GitHubAsset { Name = "FingerprintAgent-Setup.msi", BrowserDownloadUrl = "https://mock.local/setup.msi" }
+                    }
+                };
+
+                service.DownloadAndInstallForTest(release);
+
+                // Final state must be Stopped — HandleInstallFailureAsync.Stop() won, and the
+                // outer CheckForUpdateAsync finally did not overwrite it back to Running.
+                Assert.Equal(UpdateState.Stopped, service.State);
+
+                // Verify config.json was updated to disable updates
+                Assert.Contains("\"enabled\": false", File.ReadAllText(configPath));
+            }
+        }
+
+        /// <summary>
+        /// CR-06: ApplyConfig(enabled=false) called while a download/install is in flight must
+        /// defer the Stop() call. The operator's disable intent takes effect on the next cycle,
+        /// not mid-MSI. This test forces Downloading state directly so we can assert the deferral
+        /// without driving the full 10s PreInstallDelay.
+        /// </summary>
+        [Fact]
+        public void ApplyConfig_DuringDownload_DoesNotStopTimer()
+        {
+            var config = CreateConfig(enabled: true);
+            var handler = new MockHttpMessageHandler();
+
+            using (var service = CreateService(config, handler))
+            {
+                service.Start();
+                Assert.Equal(UpdateState.Running, service.State);
+
+                // Force state into Downloading — simulates mid-download snapshot.
+                service.SetStateForTest(UpdateState.Downloading);
+
+                // Operator toggles update.enabled=false mid-flight
+                var disabledConfig = CreateConfig(enabled: false);
+                service.ApplyConfig(disabledConfig);
+
+                // CR-06 deferral: Stop() was NOT called because state was in-flight.
+                // State remains Downloading; config values are mutated in place and take effect
+                // on the next CheckForUpdateAsync cycle.
+                Assert.Equal(UpdateState.Downloading, service.State);
+                Assert.False(config.Update.Enabled);
+
+                // Same assertion for Installing — both in-flight states defer
+                service.SetStateForTest(UpdateState.Installing);
+                var stillDisabled = CreateConfig(enabled: false);
+                service.ApplyConfig(stillDisabled);
+                Assert.Equal(UpdateState.Installing, service.State);
+            }
+        }
+
+        /// <summary>
+        /// CR-06 boundary case: ApplyConfig(enabled=false) called while state == Checking
+        /// (NOT in-flight per the current definition) MUST call Stop(). This is the inverse
+        /// of the in-flight deferral test — the operator's disable intent must apply promptly
+        /// when nothing is in progress. A naive "always defer" would leave the timer running
+        /// for an entire check cycle.
+        /// </summary>
+        [Fact]
+        public void ApplyConfig_DuringChecking_CallsStop()
+        {
+            var config = CreateConfig(enabled: true);
+            var handler = new MockHttpMessageHandler();
+
+            using (var service = CreateService(config, handler))
+            {
+                service.Start();
+                Assert.Equal(UpdateState.Running, service.State);
+
+                // Force state into Checking — the HTTP call is "in flight" from the user's
+                // perspective but the in-flight definition only includes Downloading/Installing.
+                service.SetStateForTest(UpdateState.Checking);
+
+                var disabledConfig = CreateConfig(enabled: false);
+                service.ApplyConfig(disabledConfig);
+
+                // Stop() IS called because Checking is not in-flight — operator's intent applies
+                Assert.Equal(UpdateState.Stopped, service.State);
+                Assert.False(config.Update.Enabled);
+            }
+        }
     }
 }
