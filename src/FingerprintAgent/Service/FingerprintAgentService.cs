@@ -281,7 +281,7 @@ namespace FingerprintAgent.Service
             // D-14/D-15: ApplyConfig starts/stops the Timer based on update.enabled toggle.
             _updateCheckService?.ApplyConfig(newConfig);
 
-            _logger?.Info(cid, $"ConfigFileWatcher: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], cors mode={newConfig.Cors.Mode}, update enabled={newConfig.Update.Enabled}");
+            _logger?.Info(cid, $"OnConfigReloaded: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], cors mode={newConfig.Cors.Mode}, update enabled={newConfig.Update.Enabled}");
         }
 
         public void StartConsole()
