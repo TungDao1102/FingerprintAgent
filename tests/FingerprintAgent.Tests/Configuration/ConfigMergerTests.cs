@@ -60,7 +60,7 @@ namespace FingerprintAgent.Tests.Configuration
         }
 
         [Fact]
-        public void Merge_UserMissingTemplateKey_GetsAdded()
+        public void Merge_UserMissingMultipleTemplateKeys_AllAdded()
         {
             // Arrange
             var user = JObject.Parse("{ \"a\": 1 }");
