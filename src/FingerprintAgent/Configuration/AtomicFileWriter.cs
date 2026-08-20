@@ -57,8 +57,10 @@ namespace FingerprintAgent.Configuration
 
             try
             {
-                // WriteAllText opens with FileShare.None by default and closes before we
-                // rename, so the temp file is fully flushed and closed before the swap.
+                // File.WriteAllText in .NET Framework 4.8 opens with FileShare.Read
+                // (NOT FileShare.None) and closes the handle before we rename. The temp
+                // file is fully flushed and closed before the swap. FileShare.Read is
+                // safe — we hold the only write handle at the moment of the rename.
                 File.WriteAllText(tempPath, contents, new UTF8Encoding(false));
 
                 if (File.Exists(path))
