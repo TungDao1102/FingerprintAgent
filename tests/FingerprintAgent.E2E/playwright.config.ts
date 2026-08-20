@@ -48,8 +48,10 @@ export default defineConfig({
   ],
 
   // Auto-start the mock backend during `playwright test` for local development.
-  // In CI the workflow runs it as a background step; reuseExistingServer=true
-  // means a dev who started their own mock backend on 8080 will not conflict.
+  // Playwright starts webServer once per `playwright test` invocation, before
+  // any workers begin; workers=1 in CI does NOT spawn a fresh process per
+  // worker. reuseExistingServer=false in CI fails fast if port 8080 is already
+  // bound (e.g. by a leftover process from a prior interrupted run).
   webServer: {
     command: 'npx ts-node fixtures/mock-backend.ts',
     port: 8080,

@@ -103,30 +103,4 @@ test.describe('Capture flow (POST /api/capture)', () => {
             await ctx.dispose();
         }
     });
-
-    test('returns CORS headers on POST response (not just preflight)', async () => {
-        const ctx = await playwrightRequest.newContext();
-        try {
-            const response = await ctx.fetch(`${AGENT_ORIGIN}/api/capture`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Origin: 'http://127.0.0.1:8080',
-                },
-                data: VALID_REQUEST,
-            });
-
-            expect(response.status()).toBe(200);
-
-            const headers = response.headers();
-            // CaptureHandler echoes the CORS headers on actual responses too
-            // (not just preflight) — required so the browser can read the body
-            // cross-origin. See CorsMiddleware.ApplyCorsHeaders.
-            expect(headers['access-control-allow-origin']).toBe('*');
-            expect(headers['access-control-allow-methods']).toBe('POST, GET, OPTIONS');
-            expect(headers['access-control-allow-headers']).toBe('Content-Type');
-        } finally {
-            await ctx.dispose();
-        }
-    });
 });

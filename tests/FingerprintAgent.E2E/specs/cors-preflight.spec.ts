@@ -53,6 +53,38 @@ test.describe('CORS preflight (OPTIONS /api/capture)', () => {
         }
     });
 
+    test('returns CORS headers on actual POST response (not just preflight)', async () => {
+        // CorsMiddleware.ApplyCorsHeaders is called for every response, not just
+        // preflight, so the browser can read the response body cross-origin.
+        const ctx = await playwrightRequest.newContext();
+        try {
+            const response = await ctx.fetch(`${AGENT_ORIGIN}/api/capture`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Origin: SAAS_ORIGIN,
+                },
+                data: {
+                    thamChieuId: 'cors-post-test',
+                    maPhieu: 'CORS-001',
+                    loaiPhieu: 'signature',
+                    vaiKyId: null,
+                    nhanLucId: null,
+                    metadata: { source: 'cors-preflight.spec.ts' },
+                },
+            });
+
+            expect(response.status()).toBe(200);
+
+            const headers = response.headers();
+            expect(headers['access-control-allow-origin']).toBe('*');
+            expect(headers['access-control-allow-methods']).toBe('POST, GET, OPTIONS');
+            expect(headers['access-control-allow-headers']).toBe('Content-Type');
+        } finally {
+            await ctx.dispose();
+        }
+    });
+
     // Future work (deferred from v1):
     //   Test: 'returns 403 in allowlist mode for non-allowed origin'
     //   Reason: would require toggling the running agent's Cors.Mode to "allowlist"

@@ -152,8 +152,9 @@ jobs:
           npx playwright install chromium
 
       # Mock backend is auto-started by Playwright's webServer config
-      # (playwright.config.ts). Workers=1 + reuseExistingServer=false in CI
-      # means each spec run gets a fresh process on port 8080.
+      # (playwright.config.ts). webServer starts once per `playwright test`
+      # invocation (NOT per worker), and reuseExistingServer=false in CI means
+      # any leftover process bound to port 8080 will fail this run fast.
       - name: Run Playwright tests
         working-directory: tests/FingerprintAgent.E2E
         run: npx playwright test

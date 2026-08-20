@@ -76,16 +76,15 @@ test.describe('Browser -> agent -> backend round-trip', () => {
         // Now read what the mock backend recorded. Poll briefly because the
         // browser may have set the title a few ms before the /receive POST
         // completed.
-        let received: Array<{ success: boolean; bytesLen: number; sha256: string | null }> = [];
         const verifyCtx = await playwrightRequest.newContext();
+        let received: Array<{ success: boolean; bytesLen: number; sha256: string | null }> = [];
         try {
-            for (let i = 0; i < 30; i++) {
+            await expect.poll(async () => {
                 const response = await verifyCtx.get(`${MOCK_BACKEND_ORIGIN}/received`);
                 expect(response.status()).toBe(200);
                 received = await response.json();
-                if (received.length >= 1) break;
-                await page.waitForTimeout(200);
-            }
+                return received.length;
+            }, { timeout: 6000 }).toBeGreaterThanOrEqual(1);
         } finally {
             await verifyCtx.dispose();
         }
@@ -108,8 +107,21 @@ test.describe('Browser -> agent -> backend round-trip', () => {
         // Cross-check the HTTP-only preflight spec (cors-preflight.spec.ts)
         // by going through a real Chromium fetch — proves the browser does not
         // see any CORS surprises that the bare-HTTP test missed.
+
+        // Opaque-origin about:blank would cause Chromium to omit Origin on fetch,
+        // so the agent's CorsMiddleware would skip preflight handling and the
+        // request would fall through to a 404. Navigate to the SaaS page first.
+        const saasPageUrl = `${MOCK_BACKEND_ORIGIN}/saas-page.html`;
+        await page.goto(saasPageUrl);
+
+        // POST + Content-Type: application/json forces the browser to auto-issue
+        // an OPTIONS preflight. status === 0 means the preflight was rejected.
         const result = await page.evaluate(async (origin: string) => {
-            const response = await fetch(`${origin}/api/capture`, { method: 'OPTIONS' });
+            const response = await fetch(`${origin}/api/capture`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: '{}',
+            });
             return {
                 status: response.status,
                 allowOrigin: response.headers.get('access-control-allow-origin'),
@@ -119,7 +131,7 @@ test.describe('Browser -> agent -> backend round-trip', () => {
             };
         }, AGENT_ORIGIN);
 
-        expect(result.status).toBe(204);
+        expect(result.status).not.toBe(0);
         expect(result.allowOrigin).toBe('*');
         expect(result.allowMethods).toBe('POST, GET, OPTIONS');
         expect(result.allowHeaders).toBe('Content-Type');
