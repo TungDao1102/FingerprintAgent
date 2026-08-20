@@ -35,10 +35,10 @@ namespace FingerprintAgent.Configuration
 
             _watcher = new FileSystemWatcher(directory, fileName)
             {
-                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size,
-                EnableRaisingEvents = true
+                NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.Size
             };
             _watcher.Changed += OnRawChanged;
+            _watcher.EnableRaisingEvents = true;
 
             _debounceTimer = new Timer(300);
             _debounceTimer.AutoReset = false;
