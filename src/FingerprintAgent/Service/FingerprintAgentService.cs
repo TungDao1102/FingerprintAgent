@@ -81,7 +81,14 @@ namespace FingerprintAgent.Service
             {
                 _updateCheckService = new UpdateCheckService(_config, _logger);
                 _updateCheckService.Start();
-                _logger.Info(startCid, $"UpdateCheckService: started (enabled={_config.Update.Enabled})");
+                if (_updateCheckService.State == UpdateState.Running)
+                {
+                    _logger.Info(startCid, $"UpdateCheckService: started (enabled={_config.Update.Enabled})");
+                }
+                else
+                {
+                    _logger.Info(startCid, $"UpdateCheckService: not started — Start() returned no-op (enabled={_config.Update.Enabled})");
+                }
             }
             catch (Exception ex)
             {
