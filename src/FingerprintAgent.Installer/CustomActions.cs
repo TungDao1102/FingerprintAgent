@@ -322,7 +322,10 @@ namespace FingerprintAgent.Installer
                 {
                     lines.Add("  + " + key);
                 }
-                File.WriteAllLines(mergeLogPath, lines);
+                // WARN-03: use AppendAllLines for cumulative history across MSI upgrades.
+                // ConfigLoader.WriteMergeLog uses AppendAllLines; this CA must match so
+                // the log file is a single cumulative record (not wiped on each upgrade).
+                File.AppendAllLines(mergeLogPath, lines);
                 return "Merged template into ProgramData config, added " + addedKeys.Count + " keys: " + string.Join(", ", addedKeys);
             }
 

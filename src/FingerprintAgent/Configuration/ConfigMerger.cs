@@ -37,6 +37,14 @@ namespace FingerprintAgent.Configuration
                 var fullKey = string.IsNullOrEmpty(prefix) ? key : prefix + "." + key;
                 var templateValue = templateProp.Value;
 
+                // WARN-02: skip explicit null template values. Adding "key": null to user
+                // config is never useful — it's a template error to ship null defaults.
+                // Null on the user side (WARN-01 documented case) is still respected.
+                if (templateValue.Type == JTokenType.Null)
+                {
+                    continue;
+                }
+
                 if (!userObj.ContainsKey(key))
                 {
                     // Key missing in user config → add from template (DeepClone to detach reference)

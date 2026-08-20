@@ -163,5 +163,26 @@ namespace FingerprintAgent.Tests.Configuration
             Assert.Single(addedKeys);
             Assert.Contains("b", addedKeys);
         }
+
+        [Fact]
+        public void Merge_NullTemplateValue_NotAddedToUserConfig()
+        {
+            // Arrange — WARN-02: template has explicit null for a key user doesn't have.
+            // Adding "key": null to user config is useless (template error pattern);
+            // the merge should skip null template values entirely.
+            var user = JObject.Parse("{ \"a\": 1 }");
+            var template = JObject.Parse("{ \"a\": 1, \"b\": null, \"c\": 3 }");
+
+            // Act
+            var (merged, addedKeys) = ConfigMerger.Merge(user, template);
+
+            // Assert
+            Assert.Equal(1, (int)merged["a"]);
+            Assert.False(merged.ContainsKey("b"), "null template values must NOT be added to user config");
+            Assert.Equal(3, (int)merged["c"]);
+            Assert.Single(addedKeys);
+            Assert.Contains("c", addedKeys);
+            Assert.DoesNotContain("b", addedKeys);
+        }
     }
 }

@@ -458,7 +458,12 @@ namespace FingerprintAgent.Update
 
             lock (_lock) { _state = UpdateState.Downloading; }
 
-            var tempPath = Path.Combine(Path.GetTempPath(), MsiAssetName);
+            // WARN-07: unique temp filename per download so concurrent TriggerImmediateCheck
+            // invocations don't truncate each other's downloads. The Guid suffix also
+            // gives the MSI a guaranteed-unique target path for msiexec.
+            var tempPath = Path.Combine(
+                Path.GetTempPath(),
+                $"FingerprintAgent-Setup-{Guid.NewGuid():N}.msi");
 
             try
             {
@@ -559,7 +564,13 @@ namespace FingerprintAgent.Update
             }
             catch (Exception ex)
             {
+                // WARN-06: silent retry loop — the disable failed but the next service restart
+                // will re-enable updates and re-attempt. Surface this prominently to the operator.
                 _logger?.Error(cid, $"UpdateCheck: failed to write update.enabled=false to config: {ex.Message}");
+                TryWriteEventLog(
+                    $"FingerprintAgent update failed AND config-disable FAILED: {ex.Message}. " +
+                    "Auto-update will retry on next service start.",
+                    EventLogEntryType.Error);
             }
 
             Stop();
