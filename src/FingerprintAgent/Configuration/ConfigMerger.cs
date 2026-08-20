@@ -96,7 +96,6 @@ namespace FingerprintAgent.Configuration
                         // upgrades that add a new scanner vendor (e.g. adding "Futronic")
                         // silently lose the addition because the user config keeps its
                         // older array verbatim.
-                        int addedCount = 0;
                         foreach (var templateElem in templateArray)
                         {
                             bool found = false;
@@ -111,7 +110,6 @@ namespace FingerprintAgent.Configuration
                             if (!found)
                             {
                                 userArray.Add(templateElem.DeepClone());
-                                addedCount++;
                                 // Per-element report for merge.log granularity — operators
                                 // see exactly which vendors were appended, not just "priority".
                                 added.Add($"{fullKey}[{templateElem}]");
