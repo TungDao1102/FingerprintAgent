@@ -66,7 +66,15 @@ namespace FingerprintAgent.Configuration
                 {
                     var userJson = JObject.Parse(File.ReadAllText(programDataConfigPath));
                     var templateJson = JObject.Parse(File.ReadAllText(templatePath));
-                    var (_, addedKeys) = ConfigMerger.Merge(userJson, templateJson);
+                    var (_, addedKeys, skippedNullKeys) = ConfigMerger.MergeCore(userJson, templateJson);
+
+                    // WARN-02: template shipped explicit null for keys we deliberately skipped.
+                    // This is always a template bug — log it loudly so it surfaces during QA.
+                    if (skippedNullKeys.Count > 0)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"[FingerprintAgent] ConfigMerger skipped null template keys: {string.Join(", ", skippedNullKeys)}");
+                    }
 
                     if (addedKeys.Count > 0)
                     {
