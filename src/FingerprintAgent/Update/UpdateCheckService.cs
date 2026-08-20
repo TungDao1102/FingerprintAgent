@@ -176,16 +176,27 @@ namespace FingerprintAgent.Update
 
         /// <summary>
         /// Applies new config. Starts/stops the Timer based on update.enabled toggle.
+        ///
+        /// CR-06: If a download or install is in flight when the config is reloaded
+        /// (operator edits config.json → ConfigFileWatcher → ApplyConfig), the operator's
+        /// "disable" intent would otherwise be ignored — the in-flight msiexec continues.
+        /// In that case we defer the apply: the timer is left running, but new config
+        /// values are stashed so a subsequent ApplyConfig (or next CheckForUpdateAsync
+        /// boundary) takes effect without interrupting the in-flight operation.
         /// </summary>
         public void ApplyConfig(AgentConfig newConfig)
         {
             if (newConfig == null) return;
 
+            bool inFlight;
             bool wasEnabled;
             bool isEnabled;
 
             lock (_lock)
             {
+                inFlight = _state == UpdateState.Downloading
+                    || _state == UpdateState.Installing;
+
                 wasEnabled = _config.Update.Enabled;
                 isEnabled = newConfig.Update.Enabled;
                 // Mutate _config in place so callers don't have to re-thread the reference.
@@ -193,6 +204,16 @@ namespace FingerprintAgent.Update
                 _config.Update.GitHubOwner = newConfig.Update.GitHubOwner;
                 _config.Update.GitHubRepo = newConfig.Update.GitHubRepo;
                 _config.Update.CheckIntervalHours = newConfig.Update.CheckIntervalHours;
+            }
+
+            if (inFlight)
+            {
+                // Don't start/stop the timer mid-download or mid-install. Config values
+                // (owner/repo/interval) are already updated above; the next CheckForUpdateAsync
+                // will pick them up. The operator's effective disable intent will apply on the
+                // next cycle.
+                _logger?.Warn(null, "UpdateCheck: config reload during in-flight update — apply deferred until next cycle");
+                return;
             }
 
             if (!wasEnabled && isEnabled)
@@ -255,6 +276,22 @@ namespace FingerprintAgent.Update
 
         private void TimerCallback(object state)
         {
+            // CR-03: skip if a check is already in flight. TriggerImmediateCheck + Timer
+            // could otherwise fire two concurrent CheckForUpdateAsync invocations —
+            // wasted API quota, double msiexec, racing config.json writes.
+            bool inFlight;
+            lock (_lock)
+            {
+                inFlight = _state == UpdateState.Checking
+                    || _state == UpdateState.Downloading
+                    || _state == UpdateState.Installing;
+            }
+            if (inFlight)
+            {
+                _logger?.Debug(null, "UpdateCheckService: TimerCallback skipped — check already in flight");
+                return;
+            }
+
             // Fire-and-forget — exceptions inside CheckForUpdateAsync are caught internally.
             try
             {
@@ -364,7 +401,21 @@ namespace FingerprintAgent.Update
             }
             finally
             {
-                lock (_lock) { _state = prevState == UpdateState.Stopped ? UpdateState.Stopped : UpdateState.Running; }
+                // CR-05: preserve Installing/Downloading state set by DownloadAndInstallAsync.
+                // If a sub-operation (Downloading, Installing) is in progress when this finally
+                // runs, leave _state as-is — the inner method's own lifecycle owns it.
+                // Otherwise restore to the saved prevState.
+                lock (_lock)
+                {
+                    if (_state == UpdateState.Installing || _state == UpdateState.Downloading)
+                    {
+                        // Sub-operation owns state — do not overwrite.
+                    }
+                    else
+                    {
+                        _state = prevState == UpdateState.Stopped ? UpdateState.Stopped : UpdateState.Running;
+                    }
+                }
             }
         }
 
