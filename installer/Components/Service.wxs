@@ -45,6 +45,7 @@
                         Description="Local fingerprint capture service providing HTTP API for web applications"
                         Type="ownProcess"
                         Start="auto"
+                        DelayedAutoStart="yes"
                         Account="LocalSystem"
                         ErrorControl="normal"
                         Vital="yes"
