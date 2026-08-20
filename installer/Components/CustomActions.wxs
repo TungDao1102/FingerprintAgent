@@ -71,5 +71,19 @@
                   Execute="immediate"
                   Return="check" />
 
+    <!--
+      StopServiceOnRollback (CR-04): if ProbeHealthAfterInstall fails and MSI rolls back,
+      WiX <ServiceControl Stop="both"> only stops on uninstall/upgrade, NOT on rollback.
+      The service can be left running on 5043 after a rolled-back install — confusing state.
+      This deferred-mode CA explicitly stops the service in the rollback path. Schedules on
+      InstallExecuteSequence with condition "Installed" so it only fires when there was
+      actually a previous install (the new install has already started the service).
+    -->
+    <CustomAction Id="StopServiceOnRollback"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="StopRunningService"
+                  Execute="rollback"
+                  Return="ignore" />
+
   </Fragment>
 </Wix>

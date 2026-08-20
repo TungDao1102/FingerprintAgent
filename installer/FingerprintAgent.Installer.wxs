@@ -114,6 +114,16 @@
       <!-- 8. Commit (standard MSI) -->
     </InstallExecuteSequence>
 
+    <!--
+      CR-04: Rollback sequence. If ProbeHealthAfterInstall returns Failure, MSI runs the
+      rollback sequence. StopServiceOnRollback is executed (rollback Execute="immediate")
+      to explicitly stop the service we just started — otherwise <ServiceControl Stop="both">
+      leaves the service running on 5043 after a rolled-back install.
+    -->
+    <InstallExecuteSequence>
+      <Custom Action="StopServiceOnRollback"><![CDATA[$StopServiceOnRollback = 1]]></Custom>
+    </InstallExecuteSequence>
+
     <!-- UI sequence for Vietnamese error dialog display during interactive install -->
     <InstallUISequence>
       <Custom Action="DetectInstallType" Before="AppSearch"><![CDATA[NOT Installed]]></Custom>

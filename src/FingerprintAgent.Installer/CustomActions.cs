@@ -35,8 +35,12 @@ namespace FingerprintAgent.Installer
         // D-05: /health probe URL matches HttpServer defaults (127.0.0.1:5043).
         internal const string HealthUrl = "http://127.0.0.1:5043/health";
 
-        // D-05: 5s timeout covers cold-start + first /health endpoint warmup.
-        internal static readonly TimeSpan HealthProbeTimeout = TimeSpan.FromSeconds(5);
+        // CR-04: 30s timeout + multi-attempt retry absorbs cold-start latency (JIT, scanner
+        // SDK load) on first install. Original 5s timeout caused false-positive rollbacks
+        // when the HttpListener bound milliseconds-to-seconds after SCM reported Running.
+        internal static readonly TimeSpan HealthProbeTimeout = TimeSpan.FromSeconds(30);
+        internal const int HealthProbeMaxAttempts = 5;
+        internal static readonly TimeSpan HealthProbeRetryDelay = TimeSpan.FromSeconds(3);
 
         // Standard MSI log message prefix used by all CustomActions for grep-friendly output.
         internal const string LogPrefix = "[FingerprintAgent.Installer] ";
@@ -147,8 +151,36 @@ namespace FingerprintAgent.Installer
         /// <summary>
         /// Pure logic helper. Performs the HTTP probe and classifies the result.
         /// Exposed as internal static so tests can verify classification rules.
+        ///
+        /// CR-04: Performs up to HealthProbeMaxAttempts probes with HealthProbeRetryDelay
+        /// between attempts. A single transient failure (cold-start delay between SCM
+        /// Running and HttpListener bind) no longer causes false-positive rollback.
+        /// Returns the first non-connection-refused/non-timeout result, or the final
+        /// outcome if all attempts fail.
         /// </summary>
         internal static HealthProbeResult ProbeHealth()
+        {
+            HealthProbeResult last = new HealthProbeResult(HealthProbeOutcome.Unhealthy, null, null);
+            for (int attempt = 1; attempt <= HealthProbeMaxAttempts; attempt++)
+            {
+                last = ProbeHealthSingleAttempt();
+                // ConnectionRefused/Timeout are the transient outcomes that retry can fix.
+                // Anything else (Healthy, DegradedScannerMissing, Unhealthy with HTTP status)
+                // is a definitive outcome — stop retrying.
+                if (last.Outcome != HealthProbeOutcome.ConnectionRefused
+                    && last.Outcome != HealthProbeOutcome.Timeout)
+                {
+                    return last;
+                }
+                if (attempt < HealthProbeMaxAttempts)
+                {
+                    System.Threading.Thread.Sleep(HealthProbeRetryDelay);
+                }
+            }
+            return last;
+        }
+
+        private static HealthProbeResult ProbeHealthSingleAttempt()
         {
             using (var client = new HttpClient { Timeout = HealthProbeTimeout })
             {
