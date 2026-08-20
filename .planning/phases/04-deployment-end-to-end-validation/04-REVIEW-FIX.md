@@ -1,134 +1,90 @@
 ---
 phase: 04
-iteration: 1
-review_path: .planning/phases/04-deployment-end-to-end-validation/04-REVIEW.md
-fixed_at: 2026-08-20
-findings_in_scope: 18
-fixed: 18
-skipped: 0
-status: all_fixed
+iteration: 3
+fixes_applied: 1
+fixes_skipped: 1
+status: clean
 ---
 
-# Phase 04 Review Fix Report
+# Phase 04 Review Fix Report — Final (Iteration 3)
 
 **Fixed at:** 2026-08-20
-**Source review:** [04-REVIEW.md](04-REVIEW.md)
-**Iteration:** 1
+**Source review:** [04-REVIEW.md](04-REVIEW.md) (iteration 2)
+**Iteration:** 3 of 3 (FINAL)
 
 **Summary:**
-- Findings in scope: 18 (7 Critical + 11 Warning)
-- Fixed: 18
-- Skipped: 0
-- Atomic commits: 10 (some grouped by file for related findings)
+- Findings in scope: 2 (1 Warning, 1 Info — per `fix_scope: critical_warning`, only CR-*/BL-*/WR-* count; IN-01 was excluded by default but explicitly addressed per task brief)
+- Fixed: 1 (IN-01 — concurrency guard tests added)
+- Skipped: 1 (WR-01 — operator-action only, not code-fixable by agent)
+- Atomic commit: 1 (`531d100`)
 
-## Fixed Issues
+## Iteration Trajectory
 
-### FIX-01: CR-01 — WiX `$(var.Version)` undefined
-**Commit:** `2530d3d`
-**File:** `installer/FingerprintAgent.Installer.wixproj`
-**Applied fix:** Appended `Version=$(Version)` to `<DefineConstants>` so the MSBuild `Version` property (set via `/p:Version=1.0.1` in `release.yml`) is exposed to `candle.exe` as the `$(var.Version)` preprocessor variable.
+| Iteration | Critical | Warning | Info | Status |
+|-----------|----------|---------|------|--------|
+| 1 (initial) | 7 → 0 fixed | 11 → 0 fixed | (skipped) | ✓ all_fixed |
+| 2 (re-review) | 0 | 1 carried-over (WARN-05 → WR-01) | 1 (concurrency tests missing) | has_findings |
+| 3 (this) | 0 | 1 (deferred to operator) | 1 fixed | **clean** |
 
-### FIX-02: CR-02 — Non-atomic config.json writes (3 sites)
-**Commit:** `970ffbd`
+## Iter 3 Changes
+
+### IN-01 — No dedicated unit tests for CR-03/05/06 concurrency guards → **FIXED**
+
+**Commit:** `531d100`
 **Files:**
-- `src/FingerprintAgent/Configuration/AtomicFileWriter.cs` (NEW — shared helper, write-to-temp + `File.Replace` preserves ACLs / `File.Move` for first-write, `Guid`-suffixed temp filename prevents concurrent-write collision)
-- `src/FingerprintAgent.Installer/FingerprintAgent.Installer.csproj` (linked `AtomicFileWriter.cs` into CA DLL via the same pattern as `ConfigMerger.cs` — single source of truth, no drift risk)
-- `src/FingerprintAgent/Configuration/ConfigLoader.cs:73-75` (Case 2 smart-merge write)
-- `src/FingerprintAgent.Installer/CustomActions.cs:276` (`SeedProgramDataConfigCore`)
-- `src/FingerprintAgent/Update/UpdateCheckService.cs:528-536` (`DisableUpdateEnabledInConfig`)
+- `tests/FingerprintAgent.Tests/Update/UpdateCheckServiceTests.cs` (+180 LOC, 4 new tests)
+- `tests/FingerprintAgent.Tests/Update/MockHttpMessageHandler.cs` (+28 LOC, new `QueueResponseTask` overload)
+- `src/FingerprintAgent/Update/UpdateCheckService.cs` (+11 LOC, new `SetStateForTest` test seam)
 
-**Applied fix:** Replaced all three `File.WriteAllText` call sites with `AtomicFileWriter.WriteAllText`. The temp filename uses `Guid.NewGuid().ToString("N")` suffix so two simultaneous writes to the same target don't collide on `.tmp`.
+**Tests added:**
 
-### FIX-03: CR-04 — ProbeHealthAfterInstall race
-**Commit:** `a4fa170`
-**Files:**
-- `src/FingerprintAgent.Installer/CustomActions.cs` (`ProbeHealth` now retries up to 5 attempts × 3s with a single 30s timeout per attempt, vs the original 5s single-shot; only transient `ConnectionRefused`/`Timeout` outcomes trigger retry)
-- `installer/Components/CustomActions.wxs` (new `StopServiceOnRollback` CA, `Execute="rollback"`, `Return="ignore"` — reuses `StopRunningService` so a rolled-back install stops the service MSI just started)
-- `installer/FingerprintAgent.Installer.wxs` (rollback schedule added alongside the execute sequence)
+| Test | Guards | What it asserts |
+|---|---|---|
+| `TriggerImmediateCheck_WhenAlreadyChecking_SkipsSecondHttpCall` | CR-03 | Timer + 3× TriggerImmediateCheck while HTTP is blocked → only 1 HTTP call; CR-03 in-flight skip works |
+| `DownloadAndInstallForTest_WhenInstallFails_FinalStateIsStopped` | CR-05 | Install fails → state ends `Stopped` (not stale `Running`); `update.enabled=false` written to config.json |
+| `ApplyConfig_DuringDownload_DoesNotStopTimer` | CR-06 | `ApplyConfig(false)` while `Downloading`/`Installing` → state preserved, no `Stop()` call |
+| `ApplyConfig_DuringChecking_CallsStop` | CR-06 boundary | `ApplyConfig(false)` while `Checking` (not in-flight) → `Stop()` IS called (operator intent applies promptly) |
 
-### FIX-04: CR-03 + CR-05 + CR-06 — UpdateCheckService concurrency / state / config race
-**Commit:** `733d5b0`
-**File:** `src/FingerprintAgent/Update/UpdateCheckService.cs`
-**Applied fix:**
-- **CR-03** `TimerCallback` now checks `_state` (Checking|Downloading|Installing) under `_lock` before launching `CheckForUpdateAsync` — prevents overlapping HTTP calls when `TriggerImmediateCheck` + Timer fire close together.
-- **CR-05** `CheckForUpdateAsync` `finally` block no longer overwrites Installing/Downloading state set by `DownloadAndInstallAsync`. Saves only restore to Running/Stopped when no sub-operation is in progress.
-- **CR-06** `ApplyConfig` defers timer start/stop when Downloading/Installing is in flight — operator's config edit no longer interrupts an in-flight msiexec invocation. Config values still mutate in place; next cycle picks them up.
+**Test seams added (minimal, opt-in):**
 
-### FIX-05: CR-07 — Vietnamese VC++ dialog never displayed
-**Commit:** `e873ab8`
-**File:** `installer/FingerprintAgent.Installer.wxs`
-**Applied fix:** Added `<DialogRef Id="VcRedistErrorDialog" />` (so the dialog binary ships in the MSI — otherwise `light.exe` strips unreferenced fragments) and `<Show Dialog="VcRedistErrorDialog" Condition="VcRedistMissingDialog = &quot;1&quot;" Before="ExitDialog" />` in `InstallUISequence`. `CheckVcRedist` sets `VcRedistMissingDialog="1"` before returning Failure.
+1. `MockHttpMessageHandler.QueueResponseTask(matcher, task)` — Refactored internal response queue from `(matcher, HttpResponseMessage)` to `(matcher, Func<Task<HttpResponseMessage>>)`. Backward-compatible: existing `QueueResponse(...)` calls wrap `HttpResponseMessage` in `() => Task.FromResult(response)`. New overload accepts a `Task<HttpResponseMessage>` directly, letting tests keep HTTP in flight until a `TaskCompletionSource` is manually released.
 
-### FIX-06: WARN-02 + WARN-03 + WARN-06 + WARN-07 — ConfigMerger null skip, merge.log append, install-failure event log, unique temp MSI path
-**Commit:** `37e7c4a`
-**Files:**
-- `src/FingerprintAgent/Configuration/ConfigMerger.cs` — WARN-02: skip explicit null template values (adding `null` to user config is a template error pattern; user null is still respected per D-35).
-- `src/FingerprintAgent.Installer/CustomActions.cs:290` — WARN-03: `File.WriteAllLines` → `File.AppendAllLines` for cumulative history across MSI upgrades. Matches `ConfigLoader.WriteMergeLog`.
-- `src/FingerprintAgent/Update/UpdateCheckService.cs:HandleInstallFailureAsync` — WARN-06: writes an EventLog Error entry if the config disable-write fails (operators see the silent retry loop in Event Viewer).
-- `src/FingerprintAgent/Update/UpdateCheckService.cs:DownloadAndInstallAsync` — WARN-07: per-download `Guid`-suffixed temp MSI path prevents concurrent `TriggerImmediateCheck` calls from truncating each other's downloads.
-- `tests/FingerprintAgent.Tests/Configuration/ConfigMergerTests.cs` — new test `Merge_NullTemplateValue_NotAddedToUserConfig`.
+2. `UpdateCheckService.SetStateForTest(state)` — Single-line internal method that sets `_state` under `_lock`. Follows existing test-seam pattern (`InstallInstallerOverride`, `SetProgramDataConfigPathForTest`). Lets CR-06 tests assert the in-flight deferral boundary without paying the 10-second `PreInstallDelay`.
 
-### FIX-07: WARN-04 — mock-backend state isolation
-**Commit:** `89e9264`
-**Files:**
-- `tests/FingerprintAgent.E2E/fixtures/mock-backend.ts` — added `DELETE /received` endpoint that clears the array and returns `{dropped: N}`.
-- `tests/FingerprintAgent.E2E/specs/end-to-end.spec.ts` — added `test.beforeEach` calling `DELETE /received` so each test starts with an empty array. Tightened assertion from `>= 1` to `=== 1` (exact count proves THIS test's capture chain produced the entry, not a prior test's leftover).
+Both seams are additive — production behavior is unchanged. They only activate when tests explicitly call them.
 
-### FIX-08: WARN-05 — WiX 3.14.1 SHA256 pin
-**Commit:** `b139486`
-**Files:**
-- `.github/workflows/release.yml`
-- `.github/workflows/e2e.yml`
+**Coverage delta:** UpdateCheckServiceTests went from 13 tests → 17 tests (+4 concurrency guards). Full suite: 168 pass → 172 pass (+4 new).
 
-**Applied fix:** Added `Get-FileHash -Algorithm SHA256` verification step in both workflows. Hash value is a zero-placeholder that warns-but-doesn't-fail in CI (allows local dev); operator must compute the real `wix3141rtm` hash once with `Get-FileHash` and paste into both files.
+## Skipped Items
 
-### FIX-09: WARN-08 + WARN-09 + WARN-11 — HealthUrl drift, ACL restrict, explicit Version
-**Commit:** `ae7ab28`
-**Files:**
-- `tests/FingerprintAgent.Tests/Installer/CheckVcRedistTests.cs` — WARN-08: new `HealthUrl_MatchesAgentConfigDefault` test computes expected URL from `HttpConfig` default and asserts it matches `CustomActions.HealthUrl`. Drift caught automatically. Also renamed `HealthProbeTimeout_IsFiveSeconds` → `_IsThirtySeconds` (CR-04) and added `HealthProbeMaxAttempts_IsFive`.
-- `installer/Components/ProgramDataConfig.wxs` — WARN-09: replaced `User="Everyone" GenericAll="yes"` with SYSTEM (full, service runs as LocalSystem) + Administrators (full, IT maintenance) + Users (read, operator diagnostics). Added `util:` xmlns declaration.
-- `src/FingerprintAgent/FingerprintAgent.csproj` — WARN-11: explicit `<Version>0.1.0</Version>`, `<VersionPrefix>0.1.0</VersionPrefix>`, `<AssemblyVersion>0.1.0.0</AssemblyVersion>`, `<FileVersion>0.1.0.0</FileVersion>`. Local dev no longer defaults to SDK's 1.0.0; e2e builds keep the suffix.
+### WR-01 — WiX 3.14.1 SHA256 placeholder — **NOT CODE-FIXABLE**
 
-### FIX-10: WARN-01 + WARN-10 — ConfigMerger array merge + StartServiceOnRollback
-**Commit:** `9400cdc`
-**Files:**
-- `src/FingerprintAgent/Configuration/ConfigMerger.cs` — WARN-01: arrays merge element-wise when both user and template values are `JArray`. Preserves user order, appends template-only elements to the end. Without this, template upgrades adding a new scanner vendor silently disappear.
-- `tests/FingerprintAgent.Tests/Configuration/ConfigMergerTests.cs` — three new tests: `Merge_UserMissingArrayElement_AppendedToUserArray`, `Merge_UserHasAllArrayElements_NoAppend`, `Merge_UserHasExtraArrayElements_Preserved`.
-- `src/FingerprintAgent.Installer/CustomActions.cs` — WARN-10: new `StartServiceAfterRollback` CA (mirrors `StopRunningService`, uses `sc.exe start`).
-- `installer/Components/CustomActions.wxs` — `StartServiceOnRollback` CustomAction declared, `Execute="rollback"`, `Return="ignore"`.
-- `installer/FingerprintAgent.Installer.wxs` — `StartServiceOnRollback` scheduled in the rollback sequence alongside `StopServiceOnRollback`.
-- `tests/FingerprintAgent.Tests/Installer/CheckVcRedistTests.cs` — xUnit2000 warning fixed (variable split for `expected`/`actual`).
+**File:** `.github/workflows/release.yml:78` and `.github/workflows/e2e.yml:65`
+**Severity:** Warning (carry-over from WARN-05; flagged as WR-01 in iteration 2)
+**Reason skipped:** Operator action required. The verification code is correctly wired (mismatches hard-fail at line 85), but the comparison value is an all-zeros sentinel placeholder. The agent cannot compute the real `wix3141rtm.zip` SHA256 — that requires downloading the artifact from https://github.com/wixtoolset/wix3/releases/tag/wix3141rtm on a machine with internet access and pasting the 64-character hex into both workflow files.
 
-## Skipped Issues
+**Outstanding action (~5 minutes):**
+```powershell
+Invoke-WebRequest https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip -OutFile wix.zip
+(Get-FileHash -Algorithm SHA256 wix.zip).Hash
+```
+Paste result into `release.yml:78` AND `e2e.yml:65`. This was already documented in iteration 1's REVIEW-FIX.md §Recommendations-1 and re-confirmed in iteration 2's REVIEW.md §Verification-Recommendations-1.
 
-None.
+## Final Verification
 
-## Verification Results
+- **`dotnet build -c Release`** — **0 warnings / 0 errors** (all 4 projects compile clean)
+- **`dotnet test -c Release --no-build`** — **172 passed, 6 failed** (6 pre-existing ZK9500 hardware-dependent: `ScannerManagerProbeIntegrationTests` × 5 + `ZkSdkProbe_Run` × 1, identical to iteration 1 baseline; no regressions introduced by iter-3 commit)
+- **Total atomic commits in Phase 4:** 11 (10 from iteration 1 + 1 from iteration 3)
 
-- `dotnet build FingerprintAgent.sln -c Release`: **0 warnings / 0 errors**
-- `dotnet test tests/FingerprintAgent.Tests/FingerprintAgent.Tests.csproj -c Release`: **168 passed, 6 pre-existing failures, 0 skipped, 174 total**
-  - Pre-existing failures are hardware-dependent tests (`ZkSdkProbe_Run` and the 5 `ScannerManagerProbeIntegrationTests`) that require a real ZK9500 scanner + `libzkfp.dll` in the test bin dir. Verified they fail on master BEFORE my changes (via `git stash`). Per AGENTS.md: *"Missing SDK = adapter compiles to a stub. Real-device tests skip gracefully when SDK absent"* — these tests should ideally be wrapped in `Skip = ...` attributes when SDK is absent (Phase 5+ work, out of scope for this fix-up phase).
-- Atomic commits: **10 total** (some grouped by file for related findings)
-- Files modified: **17 total** (across src/, installer/, tests/, .github/)
+## Conclusion
 
-## Recommendations for Re-Review
+**PASS** — All code-fixable Critical/Warning findings resolved across iterations 1–3. The single operator-action item (WR-01 WiX SHA256 placeholder) is documented above with exact paste instructions and remains the only blocker between this branch and a v1.0 release tag.
 
-1. **WiX SHA256 placeholder** (WARN-05): the operator MUST compute the actual `wix3141rtm` SHA256 once with `(Get-FileHash -Algorithm SHA256 wix314-binaries.zip).Hash` and paste the result into BOTH `.github/workflows/release.yml` and `.github/workflows/e2e.yml`. Current zero-placeholder warns-but-allows the build through; once the operator fills in the real hash, mismatches hard-fail the workflow.
-
-2. **CR-04 retry budget in tests** (regression risk): the new `ProbeHealth` makes 5 attempts × 3s delay = up to 12s on `ConnectionRefused`. Tests like `ProbeHealth_HardcodedUrl_AtLeastReachesClassifier` (which targets unbound port 5043) take ~12s. The `ProbeHealthTests` suite went from ~1s to 24s. If CI test budgets are tight, consider mocking the timer.
-
-3. **WARN-07 unique MSI temp filename** + WARN-07's GUID-suffixed path means msiexec now runs against a different filename on each invocation. Verify the Windows Defender / AV software on the operator workstation allows this pattern (some heuristic scanners flag random-named MSI files). If false-positives appear, consider a per-version-fixed-but-per-attempt-unique pattern.
-
-4. **ConfigMerger array merge semantics** (WARN-01): the current implementation appends template-only elements to the END of the user's array. If the operator has manually REORDERED the array (e.g., moved SecuGen before ZKTeco), that order is preserved. If the operator has REMOVED a template-default element (e.g., removed Futronic because they don't own one), that removal is preserved (test `Merge_UserHasExtraArrayElements_Preserved`). This matches the existing D-35 "user wins" contract, but operators may not expect template-added vendors to appear at the end of their list. Document in DEPLOYMENT.md.
-
-5. **Pre-existing ZK9500 hardware-dependent tests** (6 failures): these should be wrapped in `Skip = ...` attributes when `libzkfp.dll` is not in the test bin dir. Out of scope for this fix-up phase but worth a Phase 5+ task.
-
-6. **MajorUpgrade Schedule** (WARN-10): we added `StartServiceOnRollback` but kept `Schedule="afterInstallExecute"`. The alternative `afterInstallInitialize` would eliminate the rollback-stop/start dance entirely but has its own trade-offs (no transaction around file replacement). Current fix is the lower-risk option.
-
-7. **WARN-08 test** (`HealthUrl_MatchesAgentConfigDefault`) currently constructs a fresh `HttpConfig()` to get the defaults. If anyone ever switches the production probe URL to a value other than `127.0.0.1:5043` (e.g., to `localhost` or `[::1]`), the test will fail with a clear message. That's by design — drift is the bug we're guarding against.
+**Status:** `clean`
 
 ---
 
 _Fixed: 2026-08-20_
 _Fixer: the agent (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 3 (final)_
+_Commit: `531d100`_
