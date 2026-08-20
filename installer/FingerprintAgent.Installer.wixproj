@@ -24,7 +24,7 @@
     <SchemaVersion>3.0.6020.0</SchemaVersion>
     <OutputName>FingerprintAgent-Setup</OutputName>
     <OutputType>Package</OutputType>
-    <DefineConstants>ProductCode=FF16181A-F127-4ED9-921B-D69E05AB70B7;UpgradeCode=E00CD299-9D25-46A2-837B-226177F20210</DefineConstants>
+    <DefineConstants>ProductCode=FF16181A-F127-4ED9-921B-D69E05AB70B7;UpgradeCode=E00CD299-9D25-46A2-837B-226177F20210;Version=$(Version)</DefineConstants>
     <Version Condition="'$(Version)' == ''">0.1.0</Version>
     <!-- Don't auto-include .cs files as compile items; this project only orchestrates candle.exe. -->
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
