@@ -112,11 +112,10 @@ namespace FingerprintAgent.Configuration
                             {
                                 userArray.Add(templateElem.DeepClone());
                                 addedCount++;
+                                // Per-element report for merge.log granularity — operators
+                                // see exactly which vendors were appended, not just "priority".
+                                added.Add($"{fullKey}[{templateElem}]");
                             }
-                        }
-                        if (addedCount > 0)
-                        {
-                            added.Add(fullKey);
                         }
                     }
                     // Else: user has a value of a different type, or a scalar that conflicts
