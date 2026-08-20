@@ -53,6 +53,13 @@ namespace FingerprintAgent.Configuration
 
             // Suffix must be unique per call so two simultaneous writes to the same target
             // don't collide on .tmp. Use a Guid instead of a single .tmp filename.
+            //
+            // NOTE: temp filename adds 37 chars (1 dot + 32-char hex Guid + 4 chars ".tmp").
+            // On paths approaching MAX_PATH (260 in net48), the temp write will fail with
+            // PathTooLongException — the error surfaces at WriteAllText, not at the rename.
+            // Callers should keep target paths well under 220 chars. Future hardening:
+            // use Path.GetTempFileName() or short 8.3 names; or precompute the path length
+            // and throw a clearer ArgumentException up front.
             string tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
             try
