@@ -15,6 +15,14 @@ namespace FingerprintAgent.Configuration
     ///      attributes on the original file (vs File.Move which can drop ACL inheritance).
     ///   3. If the target does not exist (first-write), File.Move(temp, target).
     ///
+    /// ACL inheritance asymmetry: on subsequent writes (path 2), File.Replace preserves
+    /// the original file's ACL exactly. On first write (path 3), File.Move's new file
+    /// inherits its ACL from the parent directory. This is fine for our use case
+    /// (ProgramData directory ACL is the operator-visible security boundary; the file
+    /// itself has no extra restrictions) but callers in more restrictive environments
+    /// should be aware that the first write does NOT carry over a "pre-existing" ACL
+    /// because there is no pre-existing file.
+    ///
     /// The temp file is always cleaned up on failure (best-effort). If the process is
     /// killed mid-write, the .tmp file may remain on disk — operators can safely delete it.
     /// The target file is never partially written, so a crash mid-write leaves the
