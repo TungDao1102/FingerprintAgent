@@ -18,18 +18,35 @@ namespace FingerprintAgent.Configuration
     public static class ConfigMerger
     {
         /// <summary>
-        /// Returns the merged userConfig (mutated in place AND returned for chaining)
-        /// plus the list of keys that were added. Added keys are reported with full
-        /// dotted-path (e.g. "update.checkIntervalHours") so logs are unambiguous.
+        /// Convenience wrapper around <see cref="MergeCore"/> that discards the skipped-null-key list.
+        /// Prefer MergeCore when the caller wants to surface template bugs (null defaults) via logs.
+        /// Returns the merged userConfig (mutated in place AND returned for chaining) plus the
+        /// list of keys that were added. Added keys are reported with full dotted-path
+        /// (e.g. "update.checkIntervalHours") so logs are unambiguous.
         /// </summary>
         public static (JObject merged, IReadOnlyList<string> addedKeys) Merge(JObject userConfig, JObject template)
         {
-            var added = new List<string>();
-            MergeInto(userConfig, template, prefix: "", added);
-            return (userConfig, added);
+            var (merged, addedKeys, _) = MergeCore(userConfig, template);
+            return (merged, addedKeys);
         }
 
-        private static void MergeInto(JObject userObj, JObject templateObj, string prefix, List<string> added)
+        /// <summary>
+        /// Returns the merged userConfig (mutated in place AND returned for chaining) plus two
+        /// lists: keys added from template into userConfig (dotted-path), and template keys that
+        /// were explicitly null and therefore skipped (WARN-02). Skipped-null tracking is
+        /// silent at the JSON level but surfaces here so ConfigLoader can log a warning —
+        /// a template shipping "key": null is always a bug worth flagging.
+        /// </summary>
+        public static (JObject merged, IReadOnlyList<string> addedKeys, IReadOnlyList<string> skippedNullKeys) MergeCore(
+            JObject userConfig, JObject template)
+        {
+            var added = new List<string>();
+            var skippedNullKeys = new List<string>();
+            MergeInto(userConfig, template, prefix: "", added, skippedNullKeys);
+            return (userConfig, added, skippedNullKeys);
+        }
+
+        private static void MergeInto(JObject userObj, JObject templateObj, string prefix, List<string> added, List<string> skippedNullKeys)
         {
             foreach (var templateProp in templateObj.Properties())
             {
@@ -42,6 +59,7 @@ namespace FingerprintAgent.Configuration
                 // Null on the user side (WARN-01 documented case) is still respected.
                 if (templateValue.Type == JTokenType.Null)
                 {
+                    skippedNullKeys.Add(fullKey);
                     continue;
                 }
 
@@ -68,7 +86,7 @@ namespace FingerprintAgent.Configuration
                         && templateValue is JObject templateChild)
                     {
                         // Both objects → recurse to merge nested keys
-                        MergeInto(userChild, templateChild, fullKey, added);
+                        MergeInto(userChild, templateChild, fullKey, added, skippedNullKeys);
                     }
                     else if (userValue is JArray userArray
                         && templateValue is JArray templateArray)
