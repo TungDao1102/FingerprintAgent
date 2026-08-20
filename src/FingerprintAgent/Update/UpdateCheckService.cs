@@ -26,7 +26,10 @@ namespace FingerprintAgent.Update
         private const string MsiAssetName = "FingerprintAgent-Setup.msi";
         private const string GitHubOwnerEnvVar = "FA_GITHUB_OWNER";
         private static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(30);
-        private static readonly TimeSpan InstallTimeout = TimeSpan.FromMinutes(15);
+        // Note: no InstallTimeout. msiexec runs detached; the WiX ServiceControl table
+        // (installer/Components/Service.wxs:62-68 — Stop="both" Wait="yes" Timeout="30")
+        // handles the SCM stop+start contract. The old 15-min InstallTimeout constant
+        // was consumed by the synchronous RunMsiexec() that this refactor replaced.
         private static readonly TimeSpan PreInstallDelay = TimeSpan.FromSeconds(10);
 
         // ===== Testability seams =====
@@ -41,6 +44,10 @@ namespace FingerprintAgent.Update
         private UpdateState _state = UpdateState.Stopped;
         private TimeSpan _nextCheckInterval = TimeSpan.FromHours(BaseIntervalHours);
 
+        // Shutdown signal: created fresh per Start() cycle, cancelled by Stop()/Dispose()
+        // so any in-flight download/delay observes cancellation immediately.
+        private CancellationTokenSource _shutdownCts;
+
         // Test seam: when set, replaces the real msiexec invocation. Tests inject a
         // record-and-skip callback. Default null = real msiexec behavior.
         // Internal so tests can set/clear it; production never sets it.
@@ -49,9 +56,6 @@ namespace FingerprintAgent.Update
         // Test seam: file path to ProgramData config.json (overrides ConfigLoader.ProgramDataConfigPath).
         // Production uses ConfigLoader.ProgramDataConfigPath. Tests inject a temp path.
         private string _programDataConfigPathOverride;
-
-        // Test seam: prevents Environment.Exit from killing the test runner.
-        private bool _skipEnvironmentExit;
 
         // ===== Public surface =====
 
@@ -134,6 +138,7 @@ namespace FingerprintAgent.Update
                 _state = UpdateState.Running;
                 var initialInterval = TimeSpan.FromHours(BaseIntervalHours);
                 _nextCheckInterval = initialInterval;
+                _shutdownCts = new CancellationTokenSource();
                 _timer = new Timer(TimerCallback, null, initialInterval, initialInterval);
                 _logger?.Info(null, $"UpdateCheckService: started (interval={initialInterval.TotalHours}h, owner={owner}, repo={_config.Update.GitHubRepo})");
             }
@@ -155,6 +160,10 @@ namespace FingerprintAgent.Update
 
                 _state = UpdateState.Stopped;
             }
+
+            try { _shutdownCts?.Cancel(); } catch { }
+            try { _shutdownCts?.Dispose(); } catch { }
+            _shutdownCts = null;
         }
 
         /// <summary>
@@ -259,7 +268,7 @@ namespace FingerprintAgent.Update
         /// </summary>
         internal void DownloadAndInstallForTest(GitHubReleaseInfo release)
         {
-            DownloadAndInstallAsync(release).GetAwaiter().GetResult();
+            DownloadAndInstallAsync(release, CancellationToken.None).GetAwaiter().GetResult();
         }
 
         /// <summary>
@@ -269,7 +278,6 @@ namespace FingerprintAgent.Update
         internal void SetProgramDataConfigPathForTest(string path)
         {
             _programDataConfigPathOverride = path;
-            _skipEnvironmentExit = true;
         }
 
         /// <summary>
@@ -306,7 +314,7 @@ namespace FingerprintAgent.Update
             // Fire-and-forget — exceptions inside CheckForUpdateAsync are caught internally.
             try
             {
-                CheckForUpdateAsync(CancellationToken.None).GetAwaiter().GetResult();
+                CheckForUpdateAsync(_shutdownCts?.Token ?? CancellationToken.None).GetAwaiter().GetResult();
             }
             catch (Exception ex)
             {
@@ -407,7 +415,7 @@ namespace FingerprintAgent.Update
                     }
                     _logger?.Info(null, $"UpdateCheck: new release detected ({release.TagName}), backoff reset to {BaseIntervalHours}h");
 
-                    await DownloadAndInstallAsync(release).ConfigureAwait(false);
+                    await DownloadAndInstallAsync(release, ct).ConfigureAwait(false);
                 }
             }
             finally
@@ -456,7 +464,7 @@ namespace FingerprintAgent.Update
             _logger?.Info(null, $"UpdateCheck: no newer version (reason: {reason}), backoff step={newCount}, next interval={nextInterval.TotalHours}h");
         }
 
-        private async Task DownloadAndInstallAsync(GitHubReleaseInfo release)
+        private async Task DownloadAndInstallAsync(GitHubReleaseInfo release, CancellationToken ct)
         {
             var cid = AgentLogger.GenerateCorrelationId();
 
@@ -469,102 +477,119 @@ namespace FingerprintAgent.Update
 
             lock (_lock) { _state = UpdateState.Downloading; }
 
-            // WARN-07: unique temp filename per download so concurrent TriggerImmediateCheck
-            // invocations don't truncate each other's downloads. The Guid suffix also
-            // gives the MSI a guaranteed-unique target path for msiexec.
             var tempPath = Path.Combine(
                 Path.GetTempPath(),
                 $"FingerprintAgent-Setup-{Guid.NewGuid():N}.msi");
 
+            bool downloaded = false;
             try
             {
                 _logger?.Info(cid, $"UpdateCheck: downloading {asset.BrowserDownloadUrl} → {tempPath}");
                 using (var stream = await _httpClient.GetStreamAsync(asset.BrowserDownloadUrl).ConfigureAwait(false))
                 using (var file = File.Create(tempPath))
                 {
-                    await stream.CopyToAsync(file).ConfigureAwait(false);
+                    await stream.CopyToAsync(file, 81920, ct).ConfigureAwait(false);
                 }
+                downloaded = true;
+            }
+            catch (OperationCanceledException)
+            {
+                DeleteTempFile(tempPath);
+                throw;
             }
             catch (Exception ex)
             {
+                DeleteTempFile(tempPath);
                 _logger?.Error(cid, $"UpdateCheck: download failed: {ex.GetType().Name}: {ex.Message}");
-                await HandleInstallFailureAsync(cid, $"download exception: {ex.Message}").ConfigureAwait(false);
+                await HandleInstallFailureAsync(cid, $"download exception: {ex.Message}", isTransient: true).ConfigureAwait(false);
+                return;
+            }
+
+            if (!downloaded)
+            {
                 return;
             }
 
             _logger?.Info(cid, $"UpdateCheck: download complete — beginning pre-install delay of {PreInstallDelay.TotalSeconds}s");
             TryWriteEventLog($"FingerprintAgent update starting: {release.TagName}", EventLogEntryType.Information);
-            await Task.Delay(PreInstallDelay).ConfigureAwait(false);
+            try
+            {
+                await Task.Delay(PreInstallDelay, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                DeleteTempFile(tempPath);
+                throw;
+            }
 
             lock (_lock) { _state = UpdateState.Installing; }
 
-            int exitCode;
             try
             {
                 if (InstallInstallerOverride != null)
                 {
-                    // Test seam — invoke override; treat exceptions as failure.
                     InstallInstallerOverride(asset.BrowserDownloadUrl, tempPath);
                     InstallCallCount++;
-                    exitCode = 0;
+                    DeleteTempFile(tempPath);
+                    _logger?.Info(cid, "UpdateCheck: test install override succeeded — would normally start msiexec detached");
                 }
                 else
                 {
-                    exitCode = RunMsiexec(tempPath);
+                    RunMsiexecDetached(tempPath, cid);
                 }
             }
             catch (Exception ex)
             {
+                DeleteTempFile(tempPath);
                 _logger?.Error(cid, $"UpdateCheck: install invocation failed: {ex.GetType().Name}: {ex.Message}");
-                await HandleInstallFailureAsync(cid, $"install exception: {ex.Message}").ConfigureAwait(false);
+                await HandleInstallFailureAsync(cid, $"install exception: {ex.Message}", isTransient: false).ConfigureAwait(false);
                 return;
             }
 
-            if (exitCode != 0)
-            {
-                await HandleInstallFailureAsync(cid, $"msiexec exit code {exitCode}").ConfigureAwait(false);
-                return;
-            }
-
-            _logger?.Info(cid, "UpdateCheck: msiexec returned 0 — restarting service");
+            _logger?.Info(cid, $"UpdateCheck: detached msiexec started — service will be stopped by SCM and restarted with new binaries (release={release.TagName})");
             TryWriteEventLog($"FingerprintAgent update installed: {release.TagName}", EventLogEntryType.Information);
 
-            // Test seam: don't kill the test runner when running under a mock install override
-            if (InstallInstallerOverride != null || _skipEnvironmentExit)
-            {
-                _logger?.Info(cid, "UpdateCheck: test mode — would normally call Environment.Exit(0)");
-                return;
-            }
-
-            // SCM recovery restarts us with new binaries
-            Environment.Exit(0);
+            Stop();
         }
 
-        private int RunMsiexec(string tempPath)
+        private void RunMsiexecDetached(string tempPath, string cid)
         {
+            var logPath = Path.Combine(
+                Path.GetTempPath(),
+                $"FingerprintAgent-install-{Guid.NewGuid():N}.log");
+
             var psi = new ProcessStartInfo
             {
                 FileName = "msiexec.exe",
-                Arguments = $"/qn /i \"{tempPath}\"",
+                Arguments = $"/qn /norestart /i \"{tempPath}\" /l*v \"{logPath}\"",
                 UseShellExecute = false,
                 CreateNoWindow = true
             };
-            using (var p = Process.Start(psi))
+
+            var p = Process.Start(psi);
+            if (p == null)
             {
-                if (p == null)
+                throw new InvalidOperationException("msiexec process did not start");
+            }
+
+            _logger?.Info(cid, $"UpdateCheck: msiexec started (pid={p.Id}, log={logPath}) — detaching; msiexec will request SCM stop (30s graceful) and restart with new binaries");
+        }
+
+        private static void DeleteTempFile(string path)
+        {
+            try
+            {
+                if (File.Exists(path))
                 {
-                    throw new InvalidOperationException("msiexec process did not start");
+                    File.Delete(path);
                 }
-                if (!p.WaitForExit((int)InstallTimeout.TotalMilliseconds))
-                {
-                    try { p.Kill(); } catch { }
-                    throw new TimeoutException("msiexec timed out after 15 minutes");
-                }
-                return p.ExitCode;
+            }
+            catch
+            {
             }
         }
 
-        private async Task HandleInstallFailureAsync(string cid, string reason)
+        private async Task HandleInstallFailureAsync(string cid, string reason, bool isTransient)
         {
             _logger?.Error(cid, $"UpdateCheck: update failed: {reason} — disabling update.enabled");
             TryWriteEventLog($"FingerprintAgent update failed: {reason}", EventLogEntryType.Error);
@@ -590,9 +615,10 @@ namespace FingerprintAgent.Update
         private void DisableUpdateEnabledInConfig()
         {
             var path = _programDataConfigPathOverride ?? ConfigLoader.ProgramDataConfigPath;
+            var fileName = Path.GetFileName(path);
             if (!File.Exists(path))
             {
-                _logger?.Warn(null, $"UpdateCheck: ProgramData config not found at {path} — cannot disable update.enabled");
+                _logger?.Warn(null, $"UpdateCheck: ProgramData config not found ({fileName}) — cannot disable update.enabled");
                 return;
             }
 
@@ -609,7 +635,7 @@ namespace FingerprintAgent.Update
                 // CR-02: atomic write — a process kill or power loss mid-WriteAllText would
                 // otherwise leave a partial config.json that bricks the service on next boot.
                 AtomicFileWriter.WriteAllText(path, json.ToString(Newtonsoft.Json.Formatting.Indented));
-                _logger?.Info(null, $"UpdateCheck: wrote update.enabled=false to {path}");
+                _logger?.Info(null, $"UpdateCheck: wrote update.enabled=false to {fileName}");
             }
             catch (Exception ex)
             {
