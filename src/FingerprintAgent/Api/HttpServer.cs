@@ -136,6 +136,7 @@ namespace FingerprintAgent.Api
 
         private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken ct)
         {
+            var correlationId = AgentLogger.GenerateCorrelationId();
             try
             {
                 if (ct.IsCancellationRequested)
@@ -164,8 +165,6 @@ namespace FingerprintAgent.Api
                 // Apply CORS headers before writing response (headers must be set before OutputStream is flushed/closed)
                 _cors.ApplyCorsHeaders(context.Response, origin);
 
-                var correlationId = AgentLogger.GenerateCorrelationId();
-
                 if (path == "/health" && method == "GET")
                 {
                     await _healthHandler.HandleAsync(context, _scanner, correlationId);
@@ -185,8 +184,9 @@ namespace FingerprintAgent.Api
                     context.Response.OutputStream.Close();
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                _logger?.Error(correlationId, $"HandleRequest: {ex.GetType().Name}: {ex.Message}");
                 try
                 {
                     context.Response.StatusCode = 500;
