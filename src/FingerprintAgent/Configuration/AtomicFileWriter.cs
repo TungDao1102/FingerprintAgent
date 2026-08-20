@@ -63,6 +63,15 @@ namespace FingerprintAgent.Configuration
                 // safe — we hold the only write handle at the moment of the rename.
                 File.WriteAllText(tempPath, contents, new UTF8Encoding(false));
 
+                // TODO(04): durability gap — File.WriteAllText does not FlushFileBuffers,
+                // so a power loss between this call and the rename can leave the temp file
+                // present but with zero-length (or partial) content. The rename still
+                // succeeds atomically, so the target is never partially-written — but the
+                // temp may be empty if recovery is attempted. Acceptable for v1 (config
+                // files are tiny and a corrupt temp just gets re-overwritten next run).
+                // Future hardening: open with FileOptions.WriteThrough + explicit
+                // FlushFileBuffers before the rename.
+
                 if (File.Exists(path))
                 {
                     // File.Replace preserves ACLs/attributes on the original file across
