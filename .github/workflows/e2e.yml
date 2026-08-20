@@ -119,6 +119,22 @@ jobs:
           $svc = Get-Service -Name $env:SERVICE_NAME
           Write-Host "Service status: $($svc.Status)"
 
+      # E-2: flip mockMode in ProgramData only (not the shipped config) so the
+      # Playwright suite can capture without a real USB scanner. ConfigFileWatcher
+      # picks up the change within 300ms — no service restart needed.
+      - name: Enable scanner.mockMode for E2E
+        shell: pwsh
+        run: |
+          $configPath = 'C:\ProgramData\FingerprintAgent\config.json'
+          if (-not (Test-Path $configPath)) {
+            Write-Error "Expected ProgramData config at $configPath — did the MSI install fail?"
+            exit 1
+          }
+          $json = Get-Content -Raw $configPath | ConvertFrom-Json
+          $json.scanner.mockMode = $true
+          $json | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding UTF8
+          Write-Host "scanner.mockMode flipped to true in $configPath"
+
       # Wait for /health to respond. Agent takes a few seconds to bind to 5043
       # after the service transitions to Running. 30 attempts x 1s = 30s budget.
       - name: Wait for agent /health to respond

@@ -62,9 +62,12 @@ test.describe('Capture flow (POST /api/capture)', () => {
             expect(typeof body.verificationData).toBe('string');
             expect(body.verificationData.length).toBe(44);
 
-            // ISO-8601 timestamp the agent stamps on every response.
-            expect(typeof body.timestamp).toBe('string');
-            expect(new Date(body.timestamp).toString()).not.toBe('Invalid Date');
+            // ISO-8601 timestamp the agent stamps on every successful response
+            // (CaptureResponse.CapturedAt). The legacy Timestamp field is reserved
+            // for error responses and is intentionally null here — see
+            // ErrorHandlingTests.CaptureHandler_SuccessResponse_DoesNotIncludeVendorErrorCodeOrTimestamp.
+            expect(typeof body.capturedAt).toBe('string');
+            expect(new Date(body.capturedAt).toString()).not.toBe('Invalid Date');
 
             // No error fields on success.
             expect(body.errorMessage == null).toBe(true);
