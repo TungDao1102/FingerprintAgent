@@ -90,6 +90,14 @@
     <UIRef Id="WixUI_Minimal" />
     <WixVariable Id="WixUILicenseRtf" Value="" />
 
+    <!--
+      CR-07: Reference the Vietnamese VC++ error dialog so it ships in the MSI binary.
+      CheckVcRedist sets the VcRedistMissingDialog property to "1" when VC++ x86 is not
+      detected (a documented common hospital-IT scenario per D-09). The Show action in
+      InstallUISequence below displays the dialog before ExitDialog if that property is set.
+    -->
+    <DialogRef Id="VcRedistErrorDialog" />
+
     <!-- Custom Action sequence (D-38: DetectInstallType early; CheckVcRedist fail-fast; etc.) -->
     <InstallExecuteSequence>
       <!-- 1. DetectInstallType (always first — informational, sets InstallType property) -->
@@ -127,6 +135,14 @@
     <!-- UI sequence for Vietnamese error dialog display during interactive install -->
     <InstallUISequence>
       <Custom Action="DetectInstallType" Before="AppSearch"><![CDATA[NOT Installed]]></Custom>
+      <!--
+        CR-07: Display the Vietnamese VC++ error dialog before ExitDialog when the
+        CheckVcRedist CA set VcRedistMissingDialog=1. The dialog explains what's
+        missing and provides the download URL for vc_redist.x86.exe.
+      -->
+      <Show Dialog="VcRedistErrorDialog"
+            Condition="VcRedistMissingDialog = &quot;1&quot;"
+            Before="ExitDialog" />
     </InstallUISequence>
 
     <!-- ComponentGroupRef declarations pulled in from Components/*.wxs -->
