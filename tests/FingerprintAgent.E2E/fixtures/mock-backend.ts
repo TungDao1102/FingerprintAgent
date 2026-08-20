@@ -127,6 +127,17 @@ export function startMockBackend(port: number = 8080): MockBackendHandle {
                 return;
             }
 
+            if (method === 'DELETE' && url === '/received') {
+                // WARN-04: reset endpoint so spec beforeEach can clear entries from
+                // prior tests. Without this, a previous test's entries would satisfy
+                // the `received.length >= 1` assertion in a later test even when the
+                // current test's capture chain failed silently.
+                const dropped = received.length;
+                received.length = 0;
+                sendJson(res, 200, { dropped });
+                return;
+            }
+
             if (method === 'GET' && url === '/received/last') {
                 if (received.length === 0) {
                     sendJson(res, 404, { error: 'no entries yet' });

@@ -18,6 +18,19 @@ const MOCK_BACKEND_ORIGIN = 'http://127.0.0.1:8080';
 const AGENT_ORIGIN = 'http://127.0.0.1:5043';
 
 test.describe('Browser -> agent -> backend round-trip', () => {
+    // WARN-04: wipe the mock backend's recorded entries before EACH test so a
+    // previous test's entries don't satisfy this test's `received.length >= 1`
+    // assertion when its own capture chain silently fails.
+    test.beforeEach(async () => {
+        const adminCtx = await playwrightRequest.newContext();
+        try {
+            const response = await adminCtx.delete(`${MOCK_BACKEND_ORIGIN}/received`);
+            expect(response.status(), 'mock backend DELETE /received must return 200').toBe(200);
+        } finally {
+            await adminCtx.dispose();
+        }
+    });
+
     test('service is healthy when E2E runs (precondition guard)', async () => {
         // If /health fails, the rest of E2E is meaningless — fail fast with
         // a clear message so the operator knows to start the agent first.
@@ -47,19 +60,9 @@ test.describe('Browser -> agent -> backend round-trip', () => {
     });
 
     test('browser navigates to SaaS page and completes full capture flow', async ({ page }: { page: Page }) => {
-        // Wipe the mock backend's recorded entries before this test runs so we
-        // can assert exact counts. The mock backend is a single shared instance
-        // (webServer auto-start in playwright.config.ts), so a previous test
-        // could have left entries.
-        const adminCtx = await playwrightRequest.newContext();
-        try {
-            const initial = await adminCtx.get(`${MOCK_BACKEND_ORIGIN}/received`);
-            // If the backend got an entry from a prior test, surface it but don't
-            // fail — we still need the assertion below to prove THIS test's flow.
-            expect(initial.status()).toBe(200);
-        } finally {
-            await adminCtx.dispose();
-        }
+        // WARN-04: beforeEach cleared the mock backend's received entries. This
+        // test is the ONLY source of entries for the duration of its execution,
+        // so we can assert an exact count of 1 (not just >= 1).
 
         // Navigate to the SaaS page. Embedded JS kicks off the capture chain
         // immediately on load. The page title updates to "OK" or "FAIL" when done.
@@ -87,7 +90,9 @@ test.describe('Browser -> agent -> backend round-trip', () => {
             await verifyCtx.dispose();
         }
 
-        expect(received.length, 'mock backend should have recorded at least one /receive entry').toBeGreaterThanOrEqual(1);
+        // Exact count — beforeEach cleared the array, so any entry present is
+        // unambiguously from THIS test's capture chain.
+        expect(received.length, 'mock backend should have recorded exactly one /receive entry after a single capture').toBe(1);
 
         const lastEntry = received[received.length - 1];
         expect(lastEntry.success).toBe(true);
