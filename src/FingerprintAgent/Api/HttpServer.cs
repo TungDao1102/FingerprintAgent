@@ -33,7 +33,29 @@ namespace FingerprintAgent.Api
             _cors = new CorsMiddleware(config.Cors.Mode, config.Cors.AllowedOrigins);
 
             _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://{config.Http.Host}:{config.Http.Port}/");
+
+            // Resolve bind address. security.bindIp is the AUTHORITATIVE source of truth
+            // (the operator's intent for which IP the service binds to). http.host is
+            // retained for backward compatibility but ignored when BindIp is set or when
+            // they disagree — this prevents the silent-exposure bug where http.host="0.0.0.0"
+            // would override an operator-set BindIp="127.0.0.1".
+            string bindAddress = !string.IsNullOrEmpty(config.Security?.BindIp)
+                ? config.Security.BindIp
+                : (!string.IsNullOrEmpty(config.Http?.Host) ? config.Http.Host : "127.0.0.1");
+
+            // If operator explicitly set both, and they disagree, prefer BindIp and log.
+            // Never let http.host silently override the security boundary.
+            if (!string.IsNullOrEmpty(config.Http?.Host)
+                && !string.IsNullOrEmpty(config.Security?.BindIp)
+                && !string.Equals(config.Http.Host, config.Security.BindIp, StringComparison.Ordinal))
+            {
+                _logger?.Warn(null,
+                    $"HttpServer: config.http.host='{config.Http.Host}' ignored; " +
+                    $"using config.security.bindIp='{config.Security.BindIp}' " +
+                    "(security.bindIp takes precedence)");
+            }
+
+            _listener.Prefixes.Add($"http://{bindAddress}:{config.Http.Port}/");
         }
 
         // Keep the old constructor for backward compatibility
