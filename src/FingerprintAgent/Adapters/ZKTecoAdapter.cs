@@ -37,6 +37,13 @@ namespace FingerprintAgent.Adapters
         // We must Close() before re-Initialize() to recover.
         private static readonly object _hostLock = new object();
 
+        // Counts active capture invocations. ProbeConnection refuses to Close+ReInit
+        // the process-wide native host while a capture is in flight — otherwise a
+        // parallel /health probe from another request would tear down the native
+        // context the in-flight AcquireFingerprintAsync still holds a handle to.
+        // Read and written only under _hostLock, so no Interlocked is needed.
+        private static int _captureInProgress = 0;
+
         private ZkFingerPrintDevice? _device;
         private int _width;
         private int _height;
@@ -93,11 +100,22 @@ namespace FingerprintAgent.Adapters
         /// so a lightweight GetDeviceCount() check is unreliable for detecting device
         /// removal. Forces Close + re-Initialize to re-enumerate USB devices (~50-200ms).
         /// Locked via _hostLock to prevent race with concurrent Scan().
+        ///
+        /// Guarded by _captureInProgress: if a capture is in flight, the native host is
+        /// already held by the in-flight thread. We refuse to Close+ReInit here — that
+        /// would terminate the native context the in-flight AcquireFingerprintAsync is
+        /// blocked on, corrupting its handle. Instead we return the cached _isConnected
+        /// flag (the device WAS connected when the capture started).
         /// </summary>
         public bool ProbeConnection()
         {
             lock (_hostLock)
             {
+                if (_captureInProgress > 0)
+                {
+                    _vendorErrorCode = "PROBE_DEFERRED_CAPTURE_IN_FLIGHT";
+                    return _isConnected;
+                }
                 try { ZkTecoFingerHost.Close(); } catch { /* best effort */ }
                 return InitializeInternal();
             }
@@ -185,10 +203,12 @@ namespace FingerprintAgent.Adapters
 
         public async Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
-            // Snapshot device handle under lock so ProbeConnection's Close+Initialize
-            // (also under lock) can't dispose the handle mid-capture. Long
-            // AcquireFingerprintAsync runs outside lock to avoid blocking /health for
-            // up to 15s during a capture.
+            // Snapshot device handle under lock so we read a consistent _device/_width/_height
+            // triple. After the lock we publish _captureInProgress++ so a parallel ProbeConnection
+            // refuses to Close+ReInit the native host while we hold this handle. The counter is
+            // decremented in the finally below. Long AcquireFingerprintAsync runs OUTSIDE the
+            // lock so a parallel /health probe doesn't block 15s on it (the probe is now
+            // rejected by the _captureInProgress guard, so the lock is uncontended in practice).
             ZkFingerPrintDevice device;
             int width, height;
             lock (_hostLock)
@@ -201,6 +221,7 @@ namespace FingerprintAgent.Adapters
                 device = _device;
                 width = _width;
                 height = _height;
+                _captureInProgress++;
             }
 
             if (cancellationToken.IsCancellationRequested)
@@ -274,6 +295,13 @@ namespace FingerprintAgent.Adapters
                 _vendorErrorCode = $"{ex.GetType().Name}: {ex.Message}";
                 return CaptureResult.Fail("CAPTURE_FAILED",
                     $"ZKTeco: capture failed ({ex.GetType().Name}) — please retry");
+            }
+            finally
+            {
+                lock (_hostLock)
+                {
+                    _captureInProgress--;
+                }
             }
         }
 
