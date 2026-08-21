@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Logging;
@@ -19,7 +20,7 @@ namespace FingerprintAgent.Api
             _logger = logger;
         }
 
-        public async Task HandleAsync(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null)
+        public async Task HandleAsync(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(correlationId))
             {
@@ -73,7 +74,15 @@ namespace FingerprintAgent.Api
                     return;
                 }
 
-                CaptureResult result = await scanner.ScanAsync();
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _logger?.Warn(correlationId, "Capture aborted before scanner.ScanAsync: shutdown requested");
+                    context.Response.StatusCode = 503;
+                    context.Response.Close();
+                    return;
+                }
+
+                CaptureResult result = await scanner.ScanAsync(cancellationToken);
                 var vendorErrorCode = scanner.VendorErrorCode;
 
                 if (!result.IsSuccess)

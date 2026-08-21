@@ -193,7 +193,11 @@ namespace FingerprintAgent.Api
                 }
                 else if (path == "/api/capture" && method == "POST")
                 {
-                    await _captureHandler.HandleAsync(context, _scanner, correlationId);
+                    // Thread the shutdown CT into the handler so a 15s ZKTeco rolling-capture
+                    // can be aborted when SCM requests service stop. Without this, Stop()
+                    // blocks for the full in-flight drain timeout (30s) on every shutdown
+                    // while a capture is in flight.
+                    await _captureHandler.HandleAsync(context, _scanner, correlationId, ct);
                 }
                 else
                 {
