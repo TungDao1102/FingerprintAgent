@@ -164,6 +164,26 @@ Forensics sự cố y tế gần như mù.
 - Body `"null"` qua được check `IsNullOrWhiteSpace` → `DeserializeObject` trả `null` →
   `request.ThamChieuId` ném NRE (`CaptureHandler.cs:61`) → 500 thay vì 400.
 
+### H8. `_captureInProgress` leak khi cancel-before-start → ProbeConnection tê liệt vĩnh viễn đến khi restart
+
+> Phát hiện trong quá trình verify migration P/Invoke (commit `bf7d3ca`, chi tiết
+> `.planning/plans/zkteco-pinvoke-migration-plan.md` §10.3). Bug **kế thừa từ code wrapper-era**
+> (cấu trúc giống hệt từ thời commit `1255f5c`), được carry nguyên sang bản P/Invoke mới.
+
+- Cơ chế trong `ZKTecoAdapter.ScanAsync`:
+  1. `_captureInProgress++` bên trong lock (`ZKTecoAdapter.cs:232`);
+  2. thoát lock;
+  3. **early-return** ở check `cancellationToken.IsCancellationRequested` (`ZKTecoAdapter.cs:235-239`)
+     — nằm TRƯỚC khối `try { ... } finally { _captureInProgress--; }` (`:241` / `:309-315`).
+- Nếu CT fire đúng cửa sổ giữa bước 2→3 (điển hình: shutdown trong lúc capture đang xếp hàng):
+  counter tăng mà không bao giờ giảm.
+- Hậu quả: `_captureInProgress` là **static** → ảnh hưởng mọi instance ZKTecoAdapter;
+  `ProbeConnection()` rơi vào nhánh `PROBE_DEFERRED_CAPTURE_IN_FLIGHT` mãi mãi → `/health` mất khả
+  năng re-enumerate thật (chỉ trả cached state) cho đến khi restart process. Không crash, nhưng là
+  suy thoái trạng thái vĩnh viễn của endpoint chẩn đoán — đúng lúc IT cần nó nhất (sự cố USB).
+- Xác suất trigger thấp (cửa sổ hẹp) nhưng repair cost ~0: chuyển check CT vào trong khối try, hoặc
+  decrement trước đường return sớm đó.
+
 ---
 
 ## 🟡 MEDIUM / LOW — đáng sửa nhưng ít khả năng giết process

@@ -215,9 +215,48 @@ _(điền sau khi chạy T5 — ngày, model firmware, kết quả từng mục,
 
 ## 9. Điều kiện DONE
 
-- [ ] T0 baseline đã ghi (203/212, 9 known-failures DllNotFoundException — xem §5 T0)
-- [ ] T1–T4 committed, `dotnet build FingerprintAgent.sln -c Release` 0/0
-- [ ] `dotnet test` ≥ baseline T0 (mục tiêu **212/212** sau khi T3 xử lý DLL_NOT_FOUND)
-- [ ] `grep ZkTecoFingerPrint src/ tests/*/…csproj` → chỉ còn lịch sử git
-- [ ] T5 checklist 6/6 pass trên ZK9500 thật
+- [x] T0 baseline đã ghi (203/212, 9 known-failures DllNotFoundException — xem §5 T0)
+- [x] T1–T4 committed (`bf7d3ca`), `dotnet build FingerprintAgent.sln -c Release` 0/0
+- [x] `dotnet test` ≥ baseline T0: **208/214** (baseline 203/212 — xem §10)
+- [x] `grep ZkTecoFingerPrint src/` → chỉ còn comment/doc history, 0 tham chiếu code
+- [ ] **T5 checklist 6/6 pass trên ZK9500 thật — CHƯA CHẠY (cần máy có thiết bị)**
 - [ ] §8 được điền
+
+---
+
+## 10. Báo cáo verify sau migrate (2026-08-22, commit `bf7d3ca`)
+
+### 10.1 Đối chiếu plan
+
+| Task | Kết quả | Bằng chứng |
+|---|---|---|
+| T1 Serialize (C3) | ✅ | `ScannerManager._scanGate = SemaphoreSlim(1,1)`; ScanAsync bọc `WaitAsync/Release` cả mock path; TryProbe dùng `Wait(0)` non-blocking trả cached state khi đang scan; Dispose giải phóng gate |
+| T2 ZkNativeHost | ✅ | 158 dòng; đủ 7 import; guard `rawHandle <= 0 → false` (review-2); W5 leak-safe (CloseDevice mọi đường fail giữa chừng); fail-open serial/product; chọn param codes 1/2/3 đã-verify thay GetCaptureParamsEx |
+| T3 Rewrite adapter | ✅ | W1 chết (0 SourceAFIS/GDI+-BMP per capture); W2 chết (`AcquireOnce` try/finally FreeHGlobal, Copy bên trong try); `DLL_NOT_FOUND` graceful; giữ nguyên SCAN-10 / AlreadyInit(F5) / lock-on-first-identity / rolling 15s / `_captureInProgress` guard / static `_hostLock` |
+| T4 Call-sites + csproj | ✅ | 2 rename + bọc try/catch (H3 hạ mức); xóa PackageReference; thêm `InternalsVisibleTo("FingerprintAgent")` để Host exe gọi internal teardown |
+| Output dir | ✅ | Mất `ZkTecoFingerPrint.dll`, `SourceAFIS.dll`, `System.Reactive.dll`, `Dahomey.Cbor.dll` (+ `System.IO.Pipelines`, `System.Collections.Immutable` transitive) ≈ 2MB — C1 (MSI thiếu file) đỡ gánh đáng kể |
+| Build Release | ✅ | 0 warning / 0 error |
+
+### 10.2 Test: 208/214 so với baseline 203/212
+
+- **Fixed bởi migrate:** 3× `ZKTecoDeviceIntegrationTests` (DLL_NOT_FOUND → false thay vì throw).
+- **Mới, PASS:** 2× `ScannerManagerConcurrencyTests` (test overlap 2 scan).
+- **Còn fail 6 — ĐỀU là environmental by-design, KHÔNG phải hồi quy:**
+  - 5× `ScannerManagerProbeIntegrationTests` — `RequireDevice()` cố ý `Assert.True(_deviceAvailable)` với cảnh báo rõ: *"Do NOT mark this test as passing on machines without hardware"*.
+  - 1× `ZkSdkProbeTests.ZkSdkProbe_Run` — diagnostic console-probe gọi thẳng raw `ZKFPM_Init()`.
+- ⚠️ Sửa mục tiêu §9: "212/212" không khả thi trên máy không-device. Điều kiện đúng: máy không hardware → tối đa 6 fail đúng danh sách trên; máy có ZK9500 → 214/214.
+
+### 10.3 Phát hiện kế thừa cần fix follow-up
+
+**BUG — `_captureInProgress` leak khi cancel-before-start** (`ZKTecoAdapter.ScanAsync`): early-return ở
+check `cancellationToken.IsCancellationRequested` nằm SAU `_captureInProgress++` nhưng TRƯỚC khối
+`try/finally` decrement. Nếu CT fire đúng cửa sổ đó → counter tăng vĩnh viễn → `ProbeConnection` bị
+"deferred" mãi đến restart process. Bug kế thừa từ commit `1255f5c` (code cũ y hệt cấu trúc).
+Fix đề xuất: chuyển check CT vào trong try, hoặc decrement trước path return sớm đó.
+
+### 10.4 Việc còn mở
+
+1. Fix bug `_captureInProgress` leak (1 dòng).
+2. Chạy T5 checklist trên máy có ZK9500 thật + điền §8.
+3. Vẫn còn từ review chính: C1/C2 (MSI thiếu file + WiX TargetDir) — migration làm nhẹ nhưng chưa giải quyết.
+4. AGENTS.md cần cập nhật: bỏ claim wrapper NuGet, mô tả ZkNativeHost; SCANNER_SETUP.md mục "ZKTeco Fallback" giờ là path chính thức.
