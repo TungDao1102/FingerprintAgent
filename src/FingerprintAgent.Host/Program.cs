@@ -2,10 +2,10 @@ using System;
 using System.Linq;
 using System.ServiceProcess;
 using System.Threading;
+using FingerprintAgent.Adapters;
 using FingerprintAgent.Configuration;
 using FingerprintAgent.Logging;
 using FingerprintAgent.Service;
-using ZkTecoFingerPrint;
 
 namespace FingerprintAgent
 {
@@ -40,7 +40,7 @@ namespace FingerprintAgent
                     e.Cancel = true;
                     Console.WriteLine("Shutdown requested...");
                     service.StopConsole();
-                    ZkTecoFingerHost.Close();
+                    try { ZkNativeHost.Close(); } catch { /* best-effort — double-Close benign */ }
                     exitEvent.Set();
                 };
 

@@ -8,43 +8,46 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using ZkTecoFingerPrint;
 
 namespace FingerprintAgent.Adapters
 {
     /// <summary>
-    /// ZKTeco fingerprint scanner adapter using ZkTecoFingerPrint NuGet (v1.2.1).
+    /// ZKTeco fingerprint scanner adapter using raw P/Invoke via <see cref="ZkNativeHost"/>
+    /// (libzkfp.dll) — replaces the ZkTecoFingerPrint NuGet wrapper (v1.2.1).
     /// Handles GetDeviceCount()=0 quirk with retry/delay pattern (SCAN-10 / D-11).
     /// Returns conventional grayscale PNG bytes — NO pixel inversion (D-10).
     ///
-    /// Capture uses the buffer-overload of <c>ZkFingerPrintDevice.AcquireFingerprintAsync(byte[], CancellationToken)</c>.
-    /// The parameterless overload queries ZK parameter 106 to size the image buffer;
-    /// parameter 106 is unimplemented on ZK9500 (ZK SDK 5.3 / ZK10.0 firmware) and
-    /// returns ZKFP_ERR_CAPTURE (-8) immediately, which the wrapper surfaces as a
-    /// capture failure without ever calling the blocking capture. The buffer-overload
-    /// skips that query and writes directly into the caller-supplied buffer.
+    /// Capture calls <c>ZkNativeHost.AcquireFingerprint</c> directly with caller-supplied,
+    /// caller-sized buffers (width×height image + fixed 2048-byte template). The old
+    /// wrapper's parameterless overload queried ZK parameter 106 to size the image buffer;
+    /// parameter 106 is unimplemented on ZK9500 (ZK SDK 5.3 / ZK10.0 firmware) and returns
+    /// ZKFP_ERR_CAPTURE (-8) immediately, surfacing as a capture failure without ever
+    /// reaching the blocking capture. Sizing our own buffers skips that query entirely.
     ///
-    /// Rolling-capture: the wrapper's blocking call has an internal timeout (~1s on
-    /// ZK9500). We retry on Capture errors only while elapsed time is below the
-    /// 8-second adapter budget (under ScannerManager's 10s total, D-06). The user
-    /// needs time to click button → reach for scanner → place finger.
+    /// Rolling-capture: the native blocking call has an internal timeout (~1s on ZK9500).
+    /// We retry on capture errors only while elapsed time is below the 15-second adapter
+    /// budget (under ScannerManager's total budget, D-06). The user needs time to click
+    /// button → reach for scanner → place finger.
     /// </summary>
     public sealed class ZKTecoAdapter : IScannerAdapter, IDisposable
     {
         // Guards concurrent calls to EnsureHostInitialized(). The native ZKTeco host
         // is a process-wide singleton — repeated Initialize() calls after a failed or
-        // abandoned session leave the native state inconsistent and return ERROR_INITLIB.
+        // abandoned session leave the native state inconsistent and return ZKFP_ERR_INITLIB.
         // We must Close() before re-Initialize() to recover.
         private static readonly object _hostLock = new object();
 
         // Counts active capture invocations. ProbeConnection refuses to Close+ReInit
         // the process-wide native host while a capture is in flight — otherwise a
         // parallel /health probe from another request would tear down the native
-        // context the in-flight AcquireFingerprintAsync still holds a handle to.
+        // context the in-flight AcquireFingerprint still holds a handle to.
         // Read and written only under _hostLock, so no Interlocked is needed.
         private static int _captureInProgress = 0;
 
-        private ZkFingerPrintDevice? _device;
+        // F2: vendor demo + old wrapper both use a 2048-byte template buffer.
+        private const int TemplateBufferSize = 2048;
+
+        private IntPtr _handle = IntPtr.Zero;
         private int _width;
         private int _height;
         private string _deviceId = "ZKTeco-unknown";
@@ -52,40 +55,28 @@ namespace FingerprintAgent.Adapters
         private string _vendorErrorCode = "NONE";
         private bool _isConnected;
 
-        // Maps ZkResponse enum values to human-readable strings matching ZKFP_ERR_* constants.
-        // Dictionary lookup handles gaps in the enum (-15, -16, -19, -21 are not defined).
-        private static readonly System.Collections.Generic.Dictionary<int, string> _zkResponseStrings =
+        // Maps raw libzkfp error codes (ZkNativeHost.ZKFP_*) to human-readable strings.
+        // Dictionary lookup handles codes the SDK may return that we don't enumerate.
+        private static readonly System.Collections.Generic.Dictionary<int, string> _errorStrings =
             new System.Collections.Generic.Dictionary<int, string>
         {
-            [(int)ZkResponse.Ok]                = "ERROR_NONE",
-            [(int)ZkResponse.AlreadyInit]       = "ERROR_ALREADY_INIT",
-            [(int)ZkResponse.InitLibrary]       = "ERROR_INITLIB",
-            [(int)ZkResponse.Init]              = "ERROR_INIT",
-            [(int)ZkResponse.NoDevice]          = "ERROR_NO_DEVICE",
-            [(int)ZkResponse.NotSupported]      = "ERROR_NOT_SUPPORT",
-            [(int)ZkResponse.InvalidParameter]  = "ERROR_INVALID_PARAM",
-            [(int)ZkResponse.Open]              = "ERROR_OPEN",
-            [(int)ZkResponse.InvalidHandle]     = "ERROR_INVALID_HANDLE",
-            [(int)ZkResponse.Capture]           = "ERROR_CAPTURE",
-            [(int)ZkResponse.ExtractFingerPrint]= "ERROR_EXTRACT_FP",
-            [(int)ZkResponse.Abort]             = "ERROR_ABORT",
-            [(int)ZkResponse.NotEnoughMemory]   = "ERROR_MEMORY_NOT_ENOUGH",
-            [(int)ZkResponse.Busy]              = "ERROR_BUSY",
-            [(int)ZkResponse.AddFinger]         = "ERROR_ADD_FINGER",
-            [(int)ZkResponse.DeleteFinger]      = "ERROR_DELETE_FINGER",
-            [(int)ZkResponse.Fail]              = "ERROR_FAIL",
-            [(int)ZkResponse.Cancel]            = "ERROR_CANCEL",
-            [(int)ZkResponse.VerifyFingerPrint] = "ERROR_VERIFY_FP",
-            [(int)ZkResponse.Merge]             = "ERROR_MERGE",
-            [(int)ZkResponse.NotOpened]         = "ERROR_NOT_OPENED",
-            [(int)ZkResponse.NotInit]           = "ERROR_NOT_INIT",
-            [(int)ZkResponse.AlreadyOpened]     = "ERROR_ALREADY_OPENED",
-            [(int)ZkResponse.LoadImage]         = "ERROR_LOAD_IMAGE",
-            [(int)ZkResponse.AnalyzeImage]      = "ERROR_ANALYZE_IMAGE",
-            [(int)ZkResponse.Timeout]           = "ERROR_TIMEOUT"
+            [ZkNativeHost.ZKFP_OK]                 = "ERROR_NONE",
+            [ZkNativeHost.ZKFP_ALREADY_INIT]       = "ERROR_ALREADY_INIT",
+            [ZkNativeHost.ZKFP_ERR_INITLIB]        = "ERROR_INITLIB",
+            [ZkNativeHost.ZKFP_ERR_INIT]           = "ERROR_INIT",
+            [ZkNativeHost.ZKFP_ERR_NO_DEVICE]      = "ERROR_NO_DEVICE",
+            [ZkNativeHost.ZKFP_ERR_NOT_SUPPORT]    = "ERROR_NOT_SUPPORT",
+            [ZkNativeHost.ZKFP_ERR_INVALID_PARAM]  = "ERROR_INVALID_PARAM",
+            [ZkNativeHost.ZKFP_ERR_OPEN]           = "ERROR_OPEN",
+            [ZkNativeHost.ZKFP_ERR_INVALID_HANDLE] = "ERROR_INVALID_HANDLE",
+            [ZkNativeHost.ZKFP_ERR_CAPTURE]        = "ERROR_CAPTURE",
+            [ZkNativeHost.ZKFP_ERR_EXTRACT_FP]     = "ERROR_EXTRACT_FP",
+            [ZkNativeHost.ZKFP_ERR_ABORT]          = "ERROR_ABORT",
+            [ZkNativeHost.ZKFP_ERR_MEMORY]         = "ERROR_MEMORY_NOT_ENOUGH",
+            [ZkNativeHost.ZKFP_ERR_BUSY]           = "ERROR_BUSY"
         };
 
-        public bool IsConnected => _isConnected && _device != null;
+        public bool IsConnected => _isConnected && _handle != IntPtr.Zero;
 
         public string DeviceId => _deviceId;
 
@@ -96,14 +87,14 @@ namespace FingerprintAgent.Adapters
         public string VendorErrorCode => _vendorErrorCode ?? "NONE";
 
         /// <summary>
-        /// Real-time connection check. ZkTecoFingerHost caches device info after unplug,
+        /// Real-time connection check. The native host caches device info after unplug,
         /// so a lightweight GetDeviceCount() check is unreliable for detecting device
         /// removal. Forces Close + re-Initialize to re-enumerate USB devices (~50-200ms).
         /// Locked via _hostLock to prevent race with concurrent Scan().
         ///
         /// Guarded by _captureInProgress: if a capture is in flight, the native host is
         /// already held by the in-flight thread. We refuse to Close+ReInit here — that
-        /// would terminate the native context the in-flight AcquireFingerprintAsync is
+        /// would terminate the native context the in-flight AcquireFingerprint is
         /// blocked on, corrupting its handle. Instead we return the cached _isConnected
         /// flag (the device WAS connected when the capture started).
         /// </summary>
@@ -116,7 +107,7 @@ namespace FingerprintAgent.Adapters
                     _vendorErrorCode = "PROBE_DEFERRED_CAPTURE_IN_FLIGHT";
                     return _isConnected;
                 }
-                try { ZkTecoFingerHost.Close(); } catch { /* best effort */ }
+                try { ZkNativeHost.Close(); } catch { /* best effort */ }
                 return InitializeInternal();
             }
         }
@@ -132,26 +123,40 @@ namespace FingerprintAgent.Adapters
         private bool InitializeInternal()
         {
             // Dispose prior device — SDK sensor state corrupts after each capture,
-            // subsequent AcquireFingerprint returns ERROR_CAPTURE in ~70ms instead of 2s.
-            if (_device != null)
+            // subsequent AcquireFingerprint returns ZKFP_ERR_CAPTURE in ~70ms instead of 2s.
+            if (_handle != IntPtr.Zero)
             {
-                try { _device.Dispose(); } catch { }
-                _device = null;
+                try { ZkNativeHost.CloseDevice(_handle); } catch { }
+                _handle = IntPtr.Zero;
                 _isConnected = false;
             }
 
-            // ZkTecoFingerHost is a process-wide singleton. Calling Initiaize() when
-            // the previous session was abandoned (e.g. capture failed mid-flight) leaves
-            // the native context in a bad state and returns ERROR_INITLIB on retry.
-            // Recovery: Close() then re-Initialize().
-            var initResult = EnsureHostInitialized();
+            // Init host with recovery for abandoned session.
+            // Catch DllNotFoundException/BadImageFormatException → DLL_NOT_FOUND
+            // (libzkfp.dll missing or x86/x64 mismatch — degrade gracefully instead of crashing).
+            int initResult;
+            try
+            {
+                initResult = EnsureHostInitialized();
+            }
+            catch (DllNotFoundException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return false;
+            }
+            catch (BadImageFormatException)   // x86/x64 mismatch
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return false;
+            }
 
-            // AlreadyInit (1) means the host is already usable — IsSuccess is false
-            // (only Ok=0 is "success") but the host state is what we want. Treat as OK.
-            bool hostReady = initResult.IsSuccess || initResult.Response == ZkResponse.AlreadyInit;
+            // AlreadyInit (=1) means the host is already usable — it is not "success"
+            // (only Ok=0 is), but the host state is what we want. Treat as OK (F5).
+            bool hostReady = initResult == ZkNativeHost.ZKFP_OK
+                          || initResult == ZkNativeHost.ZKFP_ALREADY_INIT;
             if (!hostReady)
             {
-                _vendorErrorCode = ZkResponseToString(initResult.Response);
+                _vendorErrorCode = ErrorCodeToString(initResult);
                 return false;
             }
 
@@ -162,12 +167,17 @@ namespace FingerprintAgent.Adapters
             {
                 for (int attempt = 0; attempt < 3; attempt++)
                 {
-                    deviceCount = ZkTecoFingerHost.GetDeviceCount();
+                    deviceCount = ZkNativeHost.GetDeviceCount();
                     if (deviceCount > 0)
                         break;
                     if (attempt < 2)
                         Thread.Sleep(100);
                 }
+            }
+            catch (DllNotFoundException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return false;
             }
             catch (Exception ex)
             {
@@ -177,48 +187,46 @@ namespace FingerprintAgent.Adapters
 
             if (deviceCount == 0)
             {
-                _vendorErrorCode = ZkResponseToString(ZkResponse.NoDevice);
+                _vendorErrorCode = ErrorCodeToString(ZkNativeHost.ZKFP_ERR_NO_DEVICE);
                 return false;
             }
 
-            // OpenDevice(0) is static — returns ZkDeviceResult with IsSuccess + Value
-            var deviceResult = ZkTecoFingerHost.OpenDevice(0);
-            if (!deviceResult.IsSuccess)
+            // Open device — TryOpenDevice manages leak-safe close on intermediate failure (W5 fix)
+            if (!ZkNativeHost.TryOpenDevice(0, out _handle, out _width, out _height,
+                    out _, out string serial, out string product))
             {
-                _vendorErrorCode = ZkResponseToString(deviceResult.Response);
+                _vendorErrorCode = ErrorCodeToString(ZkNativeHost.ZKFP_ERR_OPEN);
                 return false;
             }
 
-            _device = deviceResult.Value;
-            _width = _device!.Width;
-            _height = _device!.Height;
-            // Lock device identity on first Initialize — ZK SDK's _device.Name mutates after AcquireFingerprint
-            if (_deviceId == "ZKTeco-unknown" && !string.IsNullOrEmpty(_device!.SerialNumber))
-                _deviceId = _device.SerialNumber;
-            if (_model == "ZKTeco Device" && !string.IsNullOrEmpty(_device!.Name))
-                _model = _device.Name;
+            // Lock device identity on first Initialize — ZK SDK mutates Name after AcquireFingerprint
+            if (_deviceId == "ZKTeco-unknown" && !string.IsNullOrEmpty(serial))
+                _deviceId = serial;
+            if (_model == "ZKTeco Device" && !string.IsNullOrEmpty(product))
+                _model = product;
+
             _isConnected = true;
             return true;
         }
 
         public async Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
-            // Snapshot device handle under lock so we read a consistent _device/_width/_height
+            // Snapshot device handle under lock so we read a consistent _handle/_width/_height
             // triple. After the lock we publish _captureInProgress++ so a parallel ProbeConnection
             // refuses to Close+ReInit the native host while we hold this handle. The counter is
-            // decremented in the finally below. Long AcquireFingerprintAsync runs OUTSIDE the
+            // decremented in the finally below. Long AcquireFingerprint runs OUTSIDE the
             // lock so a parallel /health probe doesn't block 15s on it (the probe is now
             // rejected by the _captureInProgress guard, so the lock is uncontended in practice).
-            ZkFingerPrintDevice device;
+            IntPtr handle;
             int width, height;
             lock (_hostLock)
             {
-                if (_device == null || !_isConnected)
+                if (_handle == IntPtr.Zero || !_isConnected)
                 {
                     _vendorErrorCode = "SCANNER_NOT_CONNECTED";
                     return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "ZKTeco: scanner not initialized");
                 }
-                device = _device;
+                handle = _handle;
                 width = _width;
                 height = _height;
                 _captureInProgress++;
@@ -244,7 +252,7 @@ namespace FingerprintAgent.Adapters
                 const int captureBudgetMs = 15000;
                 const int retryDelayMs = 100;
                 var stopwatch = Stopwatch.StartNew();
-                ZkResult<ZkFingerPrintResult?>? lastResult = null;
+                int lastResult = ZkNativeHost.ZKFP_ERR_CAPTURE;
 
                 do
                 {
@@ -254,20 +262,22 @@ namespace FingerprintAgent.Adapters
                         return CaptureResult.Fail("CAPTURE_TIMEOUT", "ZKTeco: capture cancelled by timeout");
                     }
 
-                    lastResult = await device.AcquireFingerprintAsync(imageBuffer, cancellationToken);
-                    if (lastResult.IsSuccess)
+                    lastResult = await AcquireOnce(handle, imageBuffer, cancellationToken);
+
+                    if (lastResult == ZkNativeHost.ZKFP_OK)
                         break;
+
                     await Task.Delay(retryDelayMs, cancellationToken);
                 } while (stopwatch.ElapsedMilliseconds < captureBudgetMs);
 
-                if (lastResult == null || !lastResult.IsSuccess)
+                if (lastResult != ZkNativeHost.ZKFP_OK)
                 {
                     int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
-                    ZkResponse failedResponse = lastResult?.Response ?? ZkResponse.Capture;
-                    _vendorErrorCode = ZkResponseToString(failedResponse);
-                    return CaptureResult.Fail("CAPTURE_FAILED", ZkResponseToUserMessage(failedResponse, elapsedSec));
+                    _vendorErrorCode = ErrorCodeToString(lastResult);
+                    return CaptureResult.Fail("CAPTURE_FAILED", ErrorCodeToUserMessage(lastResult, elapsedSec));
                 }
 
+                // imageBuffer has been populated by AcquireOnce (Marshal.Copy inside try, before FreeHGlobal)
                 byte[] pngBytes = ToPngGrayscale(imageBuffer, width, height);
 
                 string verificationData;
@@ -305,6 +315,43 @@ namespace FingerprintAgent.Adapters
             }
         }
 
+        /// <summary>
+        /// Single blocking acquire wrapped in Task.Run with correct try/finally around
+        /// AllocHGlobal cleanup (W2 fix — the old wrapper did not free on exception).
+        ///
+        /// Marshal.Copy runs INSIDE the try (before FreeHGlobal) so image data is
+        /// copied while the native pointer is still valid.
+        ///
+        /// ct only prevents START (same as the old wrapper) — the ~1s native block
+        /// cannot be aborted; real cancellation happens at the next retry checkpoint
+        /// (behavior preserved).
+        /// </summary>
+        private async Task<int> AcquireOnce(IntPtr handle, byte[] imageBuffer, CancellationToken ct)
+        {
+            IntPtr imagePtr = Marshal.AllocHGlobal(imageBuffer.Length);
+            IntPtr templatePtr = Marshal.AllocHGlobal(TemplateBufferSize);
+            try
+            {
+                int cbTemplate = TemplateBufferSize;
+                int result = await Task.Run(() =>
+                    ZkNativeHost.AcquireFingerprint(
+                        handle, imagePtr, (uint)imageBuffer.Length,
+                        templatePtr, ref cbTemplate), ct)
+                    .ConfigureAwait(false);
+
+                if (result == ZkNativeHost.ZKFP_OK)
+                {
+                    Marshal.Copy(imagePtr, imageBuffer, 0, imageBuffer.Length);
+                }
+                return result;
+            }
+            finally   // W2 fix: FreeHGlobal ALWAYS runs even if Task.Run throws
+            {
+                Marshal.FreeHGlobal(templatePtr);
+                Marshal.FreeHGlobal(imagePtr);
+            }
+        }
+
         private static byte[] ToPngGrayscale(byte[] rawPixels, int width, int height)
         {
             using (var bitmap = new Bitmap(width, height, PixelFormat.Format8bppIndexed))
@@ -335,86 +382,75 @@ namespace FingerprintAgent.Adapters
         }
 
         /// <summary>
-        /// Converts a ZkResponse enum value to a human-readable string for VendorErrorCode.
+        /// Converts a raw libzkfp error code to a human-readable string for VendorErrorCode.
         /// </summary>
-        private static string ZkResponseToString(ZkResponse response)
+        private static string ErrorCodeToString(int errorCode)
         {
-            int key = (int)response;
-            return _zkResponseStrings.TryGetValue(key, out string value)
+            return _errorStrings.TryGetValue(errorCode, out string value)
                 ? value
-                : $"ERROR_UNKNOWN_{key}";
+                : $"ERROR_UNKNOWN_{errorCode}";
         }
 
         /// <summary>
-        /// Maps ZkResponse to a user-actionable error message for CaptureResult.ErrorMessage.
-        /// Vendor-specific error string (ZkResponseToString) stays in VendorErrorCode.
+        /// Maps a raw libzkfp error code to a user-actionable error message for
+        /// CaptureResult.ErrorMessage. Vendor-specific error string (ErrorCodeToString)
+        /// stays in VendorErrorCode.
+        /// Note: the old wrapper had distinct Timeout/Cancel codes; the raw SDK does not
+        /// return them separately, so those cases fold into the default message.
         /// </summary>
-        private static string ZkResponseToUserMessage(ZkResponse response, int elapsedSec)
+        private static string ErrorCodeToUserMessage(int errorCode, int elapsedSec)
         {
-            switch (response)
+            switch (errorCode)
             {
-                case ZkResponse.Capture:
+                case ZkNativeHost.ZKFP_ERR_CAPTURE:
                     return $"ZKTeco: no finger detected within {elapsedSec}s — please place finger on sensor and try again";
-                case ZkResponse.Busy:
+                case ZkNativeHost.ZKFP_ERR_BUSY:
                     return "ZKTeco: scanner is busy with another operation — please retry in a moment";
-                case ZkResponse.Abort:
+                case ZkNativeHost.ZKFP_ERR_ABORT:
                     return "ZKTeco: capture aborted by sensor or driver";
-                case ZkResponse.Timeout:
-                    return $"ZKTeco: capture timed out after {elapsedSec}s — please retry";
-                case ZkResponse.InvalidHandle:
+                case ZkNativeHost.ZKFP_ERR_INVALID_HANDLE:
                     return "ZKTeco: device handle invalidated — please retry, scanner will reinitialize";
-                case ZkResponse.NoDevice:
+                case ZkNativeHost.ZKFP_ERR_NO_DEVICE:
                     return "ZKTeco: no scanner detected — check USB connection";
-                case ZkResponse.NotOpened:
+                case ZkNativeHost.ZKFP_ERR_OPEN:
                     return "ZKTeco: scanner not opened — reinitializing, please retry";
-                case ZkResponse.InvalidParameter:
+                case ZkNativeHost.ZKFP_ERR_INVALID_PARAM:
                     return "ZKTeco: invalid parameter passed to SDK — please report to IT support";
-                case ZkResponse.Cancel:
-                    return "ZKTeco: capture cancelled";
-                case ZkResponse.NotEnoughMemory:
-                    return "ZKTeco: scanner memory insufficient — please retry";
                 default:
-                    return $"ZKTeco: capture failed ({ZkResponseToString(response)})";
+                    return $"ZKTeco: capture failed ({ErrorCodeToString(errorCode)})";
             }
         }
 
         /// <summary>
-        /// Calls ZkTecoFingerHost.Initialize() with recovery for the well-known case
+        /// Calls <see cref="ZkNativeHost.Initialize"/> with recovery for the well-known case
         /// where a previous session was abandoned mid-flight (capture failed before
         /// device was closed), leaving the native state corrupted.
         ///
         /// The ZKTeco SDK has a confusing response model:
-        ///   - First call: returns Ok (0) on success
-        ///   - Second call when host is already initialized: returns AlreadyInit (1)
-        ///     — IsSuccess=false but the host IS initialized, no action needed
-        ///   - After a failed/abandoned session: returns InitLibrary (-1) or Init (-2)
-        ///     — requires Close() + retry to recover
+        ///   - First call: returns ZKFP_OK (0) on success
+        ///   - Second call when host is already initialized: returns ZKFP_ALREADY_INIT (1)
+        ///     — not "success" but the host IS initialized, no action needed
+        ///   - After a failed/abandoned session: returns ZKFP_ERR_INITLIB (-1) or
+        ///     ZKFP_ERR_INIT (-2) — requires Close() + retry to recover
         ///
         /// We treat AlreadyInit as a success because the host is in the state we want.
         /// </summary>
-        private static ZkResult<int> EnsureHostInitialized()
+        private static int EnsureHostInitialized()
         {
             lock (_hostLock)
             {
-                var result = ZkTecoFingerHost.Initialize();
+                int result = ZkNativeHost.Initialize();
 
-                // AlreadyInit means the host is already in a usable state.
-                if (result.IsSuccess || result.Response == ZkResponse.AlreadyInit)
-                {
+                // AlreadyInit (=1): host already usable — treat as success (F5)
+                if (result == ZkNativeHost.ZKFP_OK || result == ZkNativeHost.ZKFP_ALREADY_INIT)
                     return result;
-                }
 
-                // InitLibrary (-1) or Init (-2): previous session was abandoned,
-                // native state is corrupted. Close() then retry once.
-                if (result.Response == ZkResponse.InitLibrary || result.Response == ZkResponse.Init)
+                // InitLibrary (-1) / Init (-2): previous session abandoned,
+                // native state corrupted. Close() then retry once.
+                if (result == ZkNativeHost.ZKFP_ERR_INITLIB || result == ZkNativeHost.ZKFP_ERR_INIT)
                 {
-                    try { ZkTecoFingerHost.Close(); } catch { /* best effort */ }
-                    var retry = ZkTecoFingerHost.Initialize();
-                    if (retry.IsSuccess || retry.Response == ZkResponse.AlreadyInit)
-                    {
-                        return retry;
-                    }
-                    return retry;
+                    try { ZkNativeHost.Close(); } catch { /* best effort */ }
+                    return ZkNativeHost.Initialize();
                 }
 
                 return result;
@@ -424,18 +460,18 @@ namespace FingerprintAgent.Adapters
         public void Dispose()
         {
             Exception? disposalEx = null;
-            if (_device != null)
+            if (_handle != IntPtr.Zero)
             {
-                try { _device?.Dispose(); }
+                try { ZkNativeHost.CloseDevice(_handle); }
                 catch (Exception ex) { disposalEx = ex; }
-                _device = null;
+                _handle = IntPtr.Zero;
             }
             _isConnected = false;
-            // NOTE: ZkTecoFingerHost.Close() is deliberately NOT called here — it is a static
+            // NOTE: ZkNativeHost.Close() is deliberately NOT called here — it is a static
             // teardown that terminates the native context for ALL instances. Calling it from
             // an individual adapter's Dispose() would break the multi-instance pattern when
             // ScannerManager iterates through adapters. The host should be closed at service/
-            // application shutdown only (see ScannerManager.Dispose() or Program.cs cleanup).
+            // application shutdown only (see FingerprintAgentService / Program.cs cleanup).
 
             if (disposalEx != null)
                 System.Diagnostics.Debug.WriteLine($"[ZKTecoAdapter] Disposal error: {disposalEx.Message}");

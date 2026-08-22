@@ -70,9 +70,6 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="8.0.2" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-    <!-- REVIEW FIX (NuGet supply-chain): Pin to EXACT version 1.2.1 — do not use floating version. If NuGet feed defaults change, pinned version prevents unexpected updates. -->
-    <PackageReference Include="ZkTecoFingerPrint" Version="1.2.1" />
-    <!-- REVIEW FIX (fallback): If ZkTecoFingerPrint NuGet is abandoned or compromised, fall back to raw zkfp2 P/Invoke documented in 02-RESEARCH.md §5 Option A. Document this in SCANNER_SETUP.md "ZKTeco Fallback" section. -->
   </ItemGroup>
 
   <ItemGroup>

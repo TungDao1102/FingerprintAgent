@@ -33,6 +33,7 @@ namespace FingerprintAgent.Adapters
         private readonly bool _mockMode;
         private IScannerAdapter _activeAdapter;
         private readonly object _adapterLock = new object();
+        private readonly SemaphoreSlim _scanGate = new SemaphoreSlim(1, 1);
 
         private int _backoffStep = 0;
         private DateTime _backoffUntil = DateTime.MinValue;
@@ -102,47 +103,68 @@ namespace FingerprintAgent.Adapters
         model = "no-device";
         vendorErrorCode = "NONE";
 
-        IScannerAdapter[] currentAdapters;
-        IScannerAdapter cached = null;
-        lock (_adapterLock)
+        // Non-blocking gate check — if capture in progress, return cached state
+        if (!_scanGate.Wait(0))
         {
-            currentAdapters = _adapters;
-            cached = _activeAdapter;
-        }
-
-        if (cached != null && cached.IsConnected && cached.ProbeConnection())
-        {
-            deviceId = cached.DeviceId;
-            model = cached.Model;
-            vendorErrorCode = cached.VendorErrorCode;
-            return true;
-        }
-
-            if (currentAdapters == null || currentAdapters.Length == 0)
-                return false;
-
-            foreach (var adapter in currentAdapters)
+            IScannerAdapter cachedActive;
+            lock (_adapterLock) { cachedActive = _activeAdapter; }
+            if (cachedActive != null)
             {
-                try
-                {
-                    if (adapter.Initialize())
-                    {
-                        deviceId = adapter.DeviceId;
-                        model = adapter.Model;
-                        vendorErrorCode = adapter.VendorErrorCode;
-                        ActiveAdapter = adapter;
-                        return true;
-                    }
-                    vendorErrorCode = adapter.VendorErrorCode;
-                }
-                catch (Exception ex)
-                {
-                    // Never let a single adapter's exception crash /health.
-                    vendorErrorCode = $"PROBE_EXCEPTION:{ex.GetType().Name}";
-                }
+                deviceId = cachedActive.DeviceId;
+                model = cachedActive.Model;
+                vendorErrorCode = cachedActive.VendorErrorCode;
+                return cachedActive.IsConnected;
             }
             return false;
         }
+        try
+        {
+            IScannerAdapter[] currentAdapters;
+            IScannerAdapter cached = null;
+            lock (_adapterLock)
+            {
+                currentAdapters = _adapters;
+                cached = _activeAdapter;
+            }
+
+            if (cached != null && cached.IsConnected && cached.ProbeConnection())
+            {
+                deviceId = cached.DeviceId;
+                model = cached.Model;
+                vendorErrorCode = cached.VendorErrorCode;
+                return true;
+            }
+
+                if (currentAdapters == null || currentAdapters.Length == 0)
+                    return false;
+
+                foreach (var adapter in currentAdapters)
+                {
+                    try
+                    {
+                        if (adapter.Initialize())
+                        {
+                            deviceId = adapter.DeviceId;
+                            model = adapter.Model;
+                            vendorErrorCode = adapter.VendorErrorCode;
+                            ActiveAdapter = adapter;
+                            return true;
+                        }
+                        vendorErrorCode = adapter.VendorErrorCode;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Never let a single adapter's exception crash /health.
+                        vendorErrorCode = $"PROBE_EXCEPTION:{ex.GetType().Name}";
+                    }
+                }
+                return false;
+        }
+        finally
+        {
+            _scanGate.Release();
+        }
+    }
 
         /// <summary>
         /// ScannerManager itself does not maintain persistent connection state.
@@ -288,11 +310,14 @@ namespace FingerprintAgent.Adapters
         {
             string cid = AgentLogger.GenerateCorrelationId();
 
-            // MockMode: delegate directly to mock
-            if (_mockMode)
+            await _scanGate.WaitAsync(cancellationToken);
+            try
             {
-                return await ActiveAdapter.ScanAsync(cancellationToken);
-            }
+                // MockMode: delegate directly to mock
+                if (_mockMode)
+                {
+                    return await ActiveAdapter.ScanAsync(cancellationToken);
+                }
 
             // SCAN-06 backoff: retry active adapter once if it was previously connected
             // but is now disconnected (temporary disconnection / device busy)
@@ -372,6 +397,11 @@ namespace FingerprintAgent.Adapters
             _logger?.Error(cid, "ScannerManager: all adapters failed");
             ApplyBackoff(cid);
             return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "No scanner connected — all adapters failed to initialize or capture");
+            }
+            finally
+            {
+                _scanGate.Release();
+            }
         }
 
         private void ApplyBackoff(string correlationId)
@@ -389,6 +419,7 @@ namespace FingerprintAgent.Adapters
             if (_disposed) return;
             _disposed = true;
             _cts?.Dispose();
+            _scanGate?.Dispose();
             if (_adapters != null)
             {
                 IScannerAdapter active;
