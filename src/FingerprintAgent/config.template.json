@@ -14,10 +14,7 @@
   },
   "scanner": {
     "priority": [
-      "ZKTeco",
-      "SecuGen",
-      "Futronic",
-      "DigitalPersona"
+      "ZKTeco"
     ],
     "mockMode": false
   },
