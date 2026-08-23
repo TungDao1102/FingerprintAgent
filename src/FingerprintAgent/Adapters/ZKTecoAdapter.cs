@@ -44,6 +44,10 @@ namespace FingerprintAgent.Adapters
         // Read and written only under _hostLock, so no Interlocked is needed.
         private static int _captureInProgress = 0;
 
+        // Lets service shutdown skip native-host teardown while a capture survived the drain —
+        // Terminate() under a live AcquireFingerprint risks an access violation.
+        internal static bool CaptureInFlight => Volatile.Read(ref _captureInProgress) > 0;
+
         // F2: vendor demo + old wrapper both use a 2048-byte template buffer.
         private const int TemplateBufferSize = 2048;
 
@@ -232,14 +236,16 @@ namespace FingerprintAgent.Adapters
                 _captureInProgress++;
             }
 
-            if (cancellationToken.IsCancellationRequested)
-            {
-                _vendorErrorCode = "CANCELLED";
-                return CaptureResult.Fail("CAPTURE_TIMEOUT", "ZKTeco: capture cancelled before start");
-            }
-
+            // CT check MUST stay inside this try: a pre-try return would skip the
+            // finally-decrement and permanently leak _captureInProgress (H8).
             try
             {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    _vendorErrorCode = "CANCELLED";
+                    return CaptureResult.Fail("CAPTURE_TIMEOUT", "ZKTeco: capture cancelled before start");
+                }
+
                 if (width <= 0 || height <= 0)
                 {
                     _vendorErrorCode = "INVALID_DIMENSIONS";

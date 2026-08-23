@@ -189,7 +189,20 @@ namespace FingerprintAgent.Service
             // ZkNativeHost.Close() is safe to call once — static teardown for all ZKTeco sessions.
             // Called after adapter disposal since ZKTecoAdapter.Dispose() deliberately skips it
             // (multi-instance pattern: individual adapter must not close the shared host).
-            try { ZkNativeHost.Close(); } catch { /* best-effort — double-Close benign */ }
+            // M2: if a capture somehow survived the 30s drain, Terminate() here would tear the
+            // native context out from under it (AV risk) — skip and let process exit reap it.
+            try
+            {
+                if (ZKTecoAdapter.CaptureInFlight)
+                {
+                    _logger?.Warn(stopCid, "Shutdown: capture still in flight after drain — skipping native host teardown");
+                }
+                else
+                {
+                    ZkNativeHost.Close();
+                }
+            }
+            catch { /* best-effort */ }
 
             if (shutdownError != null)
             {
