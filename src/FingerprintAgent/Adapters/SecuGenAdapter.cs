@@ -2,6 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
+#if SECUGEN_SDK_PRESENT
+// Required: SDK types do not resolve without this once the stub block compiles out.
+using SecuGen.FDxSDKPro.Windows;
+#endif
+
 #if !SECUGEN_SDK_PRESENT
 // Stub types for compilation without the SecuGen SDK DLL.
 // When the DLL is present, these are replaced by the actual SDK types.
