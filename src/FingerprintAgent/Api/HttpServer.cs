@@ -22,6 +22,8 @@ namespace FingerprintAgent.Api
         private Task _workerTask;
         private readonly List<Task> _inFlightRequests = new List<Task>();
         private readonly object _inFlightLock = new object();
+        private readonly object _stopLock = new object();
+        private int _ctsDisposed;
         private bool _disposed;
 
         public HttpServer(AgentConfig config, IScannerAdapter scanner, AgentLogger logger = null)
@@ -84,42 +86,48 @@ namespace FingerprintAgent.Api
         /// </summary>
         public void Stop()
         {
-            if (_disposed)
-                return;
-
-            try
+            // Serializes teardown — concurrent Stop()/Dispose() must not interleave steps.
+            lock (_stopLock)
             {
-                _cts?.Cancel();
-            }
-            finally
-            {
-                try
-                {
-                    if (_listener.IsListening)
-                    {
-                        _listener.Stop();
-                    }
-                }
-                catch (ObjectDisposedException) { }
+                if (_disposed)
+                    return;
 
                 try
                 {
-                    _workerTask?.Wait(TimeSpan.FromSeconds(5));
+                    _cts?.Cancel();
                 }
-                catch (AggregateException) { }
-
-                Task[] inFlight;
-                lock (_inFlightLock) { inFlight = _inFlightRequests.ToArray(); }
-                if (inFlight.Length > 0)
+                finally
                 {
                     try
                     {
-                        Task.WaitAll(inFlight, TimeSpan.FromSeconds(30));
+                        if (_listener.IsListening)
+                        {
+                            _listener.Stop();
+                        }
+                    }
+                    catch (ObjectDisposedException) { }
+
+                    try
+                    {
+                        _workerTask?.Wait(TimeSpan.FromSeconds(5));
                     }
                     catch (AggregateException) { }
+
+                    Task[] inFlight;
+                    lock (_inFlightLock) { inFlight = _inFlightRequests.ToArray(); }
+                    if (inFlight.Length > 0)
+                    {
+                        try
+                        {
+                            Task.WaitAll(inFlight, TimeSpan.FromSeconds(30));
+                        }
+                        catch (AggregateException) { }
+                    }
+
+                    _listener.Close();
                 }
 
-                _listener.Close();
+                _disposed = true;
             }
         }
 
@@ -236,10 +244,11 @@ namespace FingerprintAgent.Api
         /// </summary>
         public void Dispose()
         {
-            if (!_disposed)
+            // Stop() performs the full teardown even on a Dispose-only path (the old code
+            // set _disposed before calling Stop, which then early-returned and leaked the listener).
+            Stop();
+            if (Interlocked.Exchange(ref _ctsDisposed, 1) == 0)
             {
-                _disposed = true;
-                Stop();
                 _cts?.Dispose();
             }
         }
