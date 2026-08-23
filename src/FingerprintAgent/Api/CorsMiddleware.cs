@@ -46,14 +46,15 @@ namespace FingerprintAgent.Api
             HashSet<string> allowedOrigins;
             lock (_corsLock) { mode = _mode; allowedOrigins = _allowedOrigins; }
 
-            ApplyCorsHeaders(response, origin);
-
+            // Security: reject BEFORE applying headers — denied origins must not see CORS policy.
             if (mode == "allowlist" && !allowedOrigins.Contains(origin))
             {
                 response.StatusCode = 403;
                 response.Close();
                 return true;
             }
+
+            ApplyCorsHeaders(response, origin);
 
             response.StatusCode = 204;
             response.Close();
