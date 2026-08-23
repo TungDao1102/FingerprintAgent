@@ -1,7 +1,10 @@
 using System;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.ServiceProcess;
 using System.Threading;
+using System.Threading.Tasks;
 using FingerprintAgent.Adapters;
 using FingerprintAgent.Configuration;
 using FingerprintAgent.Logging;
@@ -13,6 +16,8 @@ namespace FingerprintAgent
     {
         static void Main(string[] args)
         {
+            InstallGlobalExceptionHandlers();
+
             bool serviceMode = args.Contains("--service");
             bool consoleMode = args.Contains("--console") || Environment.UserInteractive;
 
@@ -58,6 +63,8 @@ namespace FingerprintAgent
                 if (!exitEvent.WaitOne(timeout))
                 {
                     Console.WriteLine($"Shutdown timed out after {consoleTimeoutSec}s, forcing exit...");
+                    try { service.StopConsole(); } catch (Exception ex) { Console.Error.WriteLine($"Cleanup error: {ex.Message}"); }
+                    try { ZkNativeHost.Close(); } catch { /* best-effort */ }
                 }
 
                 Console.WriteLine("Service stopped.");
@@ -67,6 +74,38 @@ namespace FingerprintAgent
                 Console.Error.WriteLine($"FATAL: Failed to run service. {ex.Message}");
                 Environment.Exit(1);
             }
+        }
+
+        // Crash forensics: unhandled exceptions previously died with only WER, never agent.log.
+        static void InstallGlobalExceptionHandlers()
+        {
+            AppDomain.CurrentDomain.UnhandledException += (s, e) =>
+                WriteCrashEntry(e.ExceptionObject as Exception, e.IsTerminating);
+            TaskScheduler.UnobservedTaskException += (s, e) =>
+            {
+                WriteCrashEntry(e.Exception, false);
+                e.SetObserved();
+            };
+        }
+
+        static void WriteCrashEntry(Exception ex, bool isTerminating)
+        {
+            if (ex == null) return;
+            string entry = $"{DateTime.UtcNow:O} [CRASH] terminating={isTerminating} {ex.GetType().FullName}: {ex.Message}\n{ex.StackTrace}";
+            try
+            {
+                EventLog.WriteEntry("FingerprintAgent", entry, EventLogEntryType.Error);
+            }
+            catch { /* source may be missing on dev boxes */ }
+            try
+            {
+                string dir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                    "FingerprintAgent", "Logs");
+                Directory.CreateDirectory(dir);
+                File.AppendAllText(Path.Combine(dir, "crash.log"), entry + Environment.NewLine);
+            }
+            catch { /* disk full / ACL — nothing left to do */ }
         }
     }
 }
