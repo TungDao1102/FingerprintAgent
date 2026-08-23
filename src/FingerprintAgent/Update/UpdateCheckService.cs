@@ -26,6 +26,9 @@ namespace FingerprintAgent.Update
         private const string MsiAssetName = "FingerprintAgent-Setup.msi";
         private const string GitHubOwnerEnvVar = "FA_GITHUB_OWNER";
         private static readonly TimeSpan HttpTimeout = TimeSpan.FromSeconds(30);
+        // Per-request timeouts only (API=HttpTimeout, download=DownloadTimeout); HttpClient is
+        // Infinite so a large MSI survives past 30s while every request stays bounded + cancellable.
+        private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(15);
         // Note: no InstallTimeout. msiexec runs detached; the WiX ServiceControl table
         // (installer/Components/Service.wxs:62-68 — Stop="both" Wait="yes" Timeout="30")
         // handles the SCM stop+start contract. The old 15-min InstallTimeout constant
@@ -100,11 +103,11 @@ namespace FingerprintAgent.Update
 
             if (handler != null)
             {
-                _httpClient = new HttpClient(handler) { Timeout = HttpTimeout };
+                _httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
             }
             else
             {
-                _httpClient = new HttpClient { Timeout = HttpTimeout };
+                _httpClient = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
             }
         }
 
@@ -311,15 +314,15 @@ namespace FingerprintAgent.Update
                 return;
             }
 
-            // Fire-and-forget — exceptions inside CheckForUpdateAsync are caught internally.
-            try
+            // Fire-and-forget with observed faults — blocking .GetResult() pinned a
+            // threadpool thread for minutes during MSI downloads. CR-03 guard still
+            // prevents overlap: _state flips to Checking synchronously on entry.
+            var token = _shutdownCts?.Token ?? CancellationToken.None;
+            CheckForUpdateAsync(token).ContinueWith(t =>
             {
-                CheckForUpdateAsync(_shutdownCts?.Token ?? CancellationToken.None).GetAwaiter().GetResult();
-            }
-            catch (Exception ex)
-            {
-                _logger?.Error(null, $"UpdateCheckService: TimerCallback threw {ex.GetType().Name}: {ex.Message}");
-            }
+                var inner = t.Exception?.Flatten().InnerException;
+                _logger?.Error(null, $"UpdateCheckService: TimerCallback threw {inner?.GetType().Name}: {inner?.Message}");
+            }, TaskContinuationOptions.OnlyOnFaulted);
         }
 
         private async Task CheckForUpdateAsync(CancellationToken ct)
@@ -343,13 +346,18 @@ namespace FingerprintAgent.Update
                 HttpResponseMessage response;
                 try
                 {
-                    using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                    using (var apiCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
                     {
-                        req.Headers.Add("Accept", "application/vnd.github+json");
-                        req.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
-                        req.Headers.Add("User-Agent", $"FingerprintAgent/{currentVersion}");
+                        // HttpClient runs with Timeout.InfiniteTimeSpan — every request bounds itself.
+                        apiCts.CancelAfter(HttpTimeout);
+                        using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+                        {
+                            req.Headers.Add("Accept", "application/vnd.github+json");
+                            req.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
+                            req.Headers.Add("User-Agent", $"FingerprintAgent/{currentVersion}");
 
-                        response = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+                            response = await _httpClient.SendAsync(req, apiCts.Token).ConfigureAwait(false);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -430,6 +438,11 @@ namespace FingerprintAgent.Update
                     {
                         // Sub-operation owns state — do not overwrite.
                     }
+                    else if (_timer == null)
+                    {
+                        // Stop() ran mid-check: stay Stopped, never resurrect Running without a timer.
+                        _state = UpdateState.Stopped;
+                    }
                     else
                     {
                         _state = prevState == UpdateState.Stopped ? UpdateState.Stopped : UpdateState.Running;
@@ -485,10 +498,21 @@ namespace FingerprintAgent.Update
             try
             {
                 _logger?.Info(cid, $"UpdateCheck: downloading {asset.BrowserDownloadUrl} → {tempPath}");
-                using (var stream = await _httpClient.GetStreamAsync(asset.BrowserDownloadUrl).ConfigureAwait(false))
-                using (var file = File.Create(tempPath))
+                using (var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct))
                 {
-                    await stream.CopyToAsync(file, 81920, ct).ConfigureAwait(false);
+                    downloadCts.CancelAfter(DownloadTimeout);
+                    using (var req = new HttpRequestMessage(HttpMethod.Get, asset.BrowserDownloadUrl))
+                    using (var resp = await _httpClient
+                        .SendAsync(req, HttpCompletionOption.ResponseHeadersRead, downloadCts.Token)
+                        .ConfigureAwait(false))
+                    {
+                        resp.EnsureSuccessStatusCode();
+                        using (var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                        using (var file = File.Create(tempPath))
+                        {
+                            await stream.CopyToAsync(file, 81920, downloadCts.Token).ConfigureAwait(false);
+                        }
+                    }
                 }
                 downloaded = true;
             }
