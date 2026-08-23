@@ -46,9 +46,7 @@ namespace FingerprintAgent.Adapters
             set { lock (_adapterLock) _activeAdapter = value; }
         }
 
-        public bool IsConnected => _mockMode
-            ? ActiveAdapter?.IsConnected ?? false
-            : (ActiveAdapter?.IsConnected ?? false);
+        public bool IsConnected => ActiveAdapter?.IsConnected ?? false;
 
         public string DeviceId => _mockMode
             ? (ActiveAdapter?.DeviceId ?? "mock-device")
@@ -261,16 +259,26 @@ namespace FingerprintAgent.Adapters
             }
 
             // Dispose old adapters that are NOT the active adapter
-            // (active adapter stays alive; disposed only at ScannerManager shutdown)
-            if (oldAdapters != null)
+            // (active adapter stays alive; disposed only at ScannerManager shutdown).
+            // Serialize disposal against in-flight scans: disposing an adapter mid-scan is
+            // a native use-after-close. Safe lock order — _adapterLock released above.
+            _scanGate.Wait();
+            try
             {
-                IScannerAdapter active;
-                lock (_adapterLock) { active = _activeAdapter; }
-                foreach (var adapter in oldAdapters)
+                if (oldAdapters != null)
                 {
-                    if (!ReferenceEquals(adapter, active))
-                        (adapter as IDisposable)?.Dispose();
+                    IScannerAdapter active;
+                    lock (_adapterLock) { active = _activeAdapter; }
+                    foreach (var adapter in oldAdapters)
+                    {
+                        if (!ReferenceEquals(adapter, active))
+                            (adapter as IDisposable)?.Dispose();
+                    }
                 }
+            }
+            finally
+            {
+                _scanGate.Release();
             }
 
             _logger?.Info(null, $"ScannerManager: priority updated, new order=[{string.Join(", ", newPriority)}]");
@@ -319,6 +327,11 @@ namespace FingerprintAgent.Adapters
                     return await ActiveAdapter.ScanAsync(cancellationToken);
                 }
 
+                // Budget opens BEFORE SCAN-06: the reconnect retry shares the 20s clock.
+                using (var totalCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken))
+                {
+                    totalCts.CancelAfter(TimeSpan.FromSeconds(20));
+
             // SCAN-06 backoff: retry active adapter once if it was previously connected
             // but is now disconnected (temporary disconnection / device busy)
             IScannerAdapter current;
@@ -329,7 +342,7 @@ namespace FingerprintAgent.Adapters
                 if (current.Initialize())
                 {
                     _logger?.Info(null, "ScannerManager: active adapter reconnected, proceeding");
-                    var retryResult = await current.ScanAsync(cancellationToken);
+                    var retryResult = await current.ScanAsync(totalCts.Token);
                     if (retryResult.IsSuccess)
                     {
                         ActiveAdapter = current;
@@ -343,11 +356,6 @@ namespace FingerprintAgent.Adapters
                     _logger?.Warn(null, $"ScannerManager: active adapter retry initialize failed: {current.VendorErrorCode}");
                 }
             }
-
-            // 20-second total budget (D-13: centralized timeout only).
-            using (var totalCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken))
-            {
-                totalCts.CancelAfter(TimeSpan.FromSeconds(20));
 
                 IScannerAdapter[] currentAdapters;
                 lock (_adapterLock) { currentAdapters = _adapters; }
