@@ -293,6 +293,8 @@ namespace FingerprintAgent.Tests.Api
             };
             var sm = new ScannerManager(new[] { failing }, null);
 
+            // Backoff escalates per all-fail sweep, capped at the last delay index (3);
+            // scans are NOT gated during backoff.
             for (int i = 0; i < 5; i++)
                 await sm.ScanAsync();
 
