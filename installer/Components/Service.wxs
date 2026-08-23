@@ -15,21 +15,70 @@
 
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
-
-      <!-- Binaries shipped with MSI (first-party only; no vendor DLLs per D-32a) -->
+      <!--
+        Binaries shipped with MSI (first-party only; no vendor DLLs per D-32a).
+        C1 fix: this list MUST mirror src/FingerprintAgent.Host/bin/$(var)/net48 output.
+        Previous 4-file list omitted every Microsoft.Extensions*/System.* dependency and
+        FingerprintAgent.exe.config (binding redirects) → installed service died on start
+        with FileNotFoundException at the first ConfigLoader.Load() JIT. When a NuGet
+        reference is added/removed, update this list in the same change.
+      -->
       <Component Id="cmp_Binaries" Guid="{B5A2C3D1-7E4F-4A2B-9C8D-1E2F3A4B5C6D}" Win64="no">
         <File Id="fil_AgentExe"
               Source="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.exe"
               KeyPath="yes"
               Checksum="yes" />
+        <File Id="fil_AgentExeConfig"
+              Source="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.exe.config" />
         <File Id="fil_AgentLibrary"
               Source="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.Library.dll" />
         <File Id="fil_NewtonsoftJson"
               Source="$(var.FingerprintAgent.Host.TargetDir)Newtonsoft.Json.dll" />
+        <File Id="fil_DPUruNet"
+              Source="$(var.FingerprintAgent.Host.TargetDir)DPUruNet.dll" />
+        <File Id="fil_MsBclAsyncInterfaces"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Bcl.AsyncInterfaces.dll" />
+        <File Id="fil_MsCfgAbstractions"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.Configuration.Abstractions.dll" />
+        <File Id="fil_MsCfgBinder"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.Configuration.Binder.dll" />
+        <File Id="fil_MsCfg"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.Configuration.dll" />
+        <File Id="fil_MsCfgFileExtensions"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.Configuration.FileExtensions.dll" />
+        <File Id="fil_MsCfgJson"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.Configuration.Json.dll" />
+        <File Id="fil_MsDiAbstractions"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+        <File Id="fil_MsDi"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.DependencyInjection.dll" />
+        <File Id="fil_MsFpAbstractions"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.FileProviders.Abstractions.dll" />
+        <File Id="fil_MsFpPhysical"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.FileProviders.Physical.dll" />
+        <File Id="fil_MsFsGlobbing"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.FileSystemGlobbing.dll" />
+        <File Id="fil_MsPrimitives"
+              Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Extensions.Primitives.dll" />
+        <File Id="fil_SystemBuffers"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Buffers.dll" />
+        <File Id="fil_SystemMemory"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Memory.dll" />
+        <File Id="fil_SystemNumericsVectors"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Numerics.Vectors.dll" />
+        <File Id="fil_SystemRcuUnsafe"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Runtime.CompilerServices.Unsafe.dll" />
+        <File Id="fil_SystemTextEncodingsWeb"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Text.Encodings.Web.dll" />
+        <File Id="fil_SystemTextJson"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Text.Json.dll" />
+        <File Id="fil_SystemThreadingTasksExtensions"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.Threading.Tasks.Extensions.dll" />
+        <File Id="fil_SystemValueTuple"
+              Source="$(var.FingerprintAgent.Host.TargetDir)System.ValueTuple.dll" />
         <File Id="fil_ConfigTemplate"
               Source="$(var.FingerprintAgent.Host.TargetDir)config.template.json" />
       </Component>
-
       <!-- Service registration via WiX (D-19) -->
       <Component Id="cmp_Service" Guid="{C1D2E3F4-5A6B-7C8D-9E0F-1A2B3C4D5E6F}" Win64="no">
         <CreateFolder />

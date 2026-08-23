@@ -75,6 +75,15 @@
       <WixToolDir>$([MSBuild]::EnsureTrailingSlash('$(WixToolPath)'))</WixToolDir>
       <CandlePath>$(WixToolDir)candle.exe</CandlePath>
       <LightPath>$(WixToolDir)light.exe</LightPath>
+      <!--
+        C2 fix: Service.wxs / CustomActions.wxs reference $(var.FingerprintAgent.Host.TargetDir)
+        and $(var.FingerprintAgent.Installer.TargetDir). The standard wix.targets machinery that
+        normally defines those variables is bypassed by this hand-rolled Build target, so we
+        derive them from the solution's fixed layout (dotnet build FingerprintAgent.sln runs
+        first in CI and locally) and feed them to candle explicitly.
+      -->
+      <HostTargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Host\bin\$(Configuration)\net48'))</HostTargetDir>
+      <InstallerCATargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Installer\bin\$(Configuration)'))</InstallerCATargetDir>
     </PropertyGroup>
     <ItemGroup>
       <WixSource Include="@(Compile)" />
@@ -88,7 +97,7 @@
       DefineConstants is now a single "Version=$(Version)" string; we pass it via -d
       so MSBuild's property flows through unchanged.
     -->
-    <Exec Command="&quot;$(CandlePath)&quot; -ext WixUIExtension -ext WixUtilExtension -dVersion=$(Version) -o &quot;$(OutputPath)&quot; @(Compile, ' ')" />
+    <Exec Command="&quot;$(CandlePath)&quot; -ext WixUIExtension -ext WixUtilExtension -dVersion=$(Version) -dFingerprintAgent.Host.TargetDir=&quot;$(HostTargetDir)&quot; -dFingerprintAgent.Installer.TargetDir=&quot;$(InstallerCATargetDir)&quot; -o &quot;$(OutputPath)&quot; @(Compile, ' ')" />
     <Exec Command="&quot;$(LightPath)&quot; -ext WixUIExtension -ext WixUtilExtension -cultures:en-US -loc &quot;Dialogs\WixUI_Minimal.vi-VN.wxl&quot; -out &quot;$(OutputPath)$(OutputName).msi&quot; @(WixObject, ' ')" />
   </Target>
 </Project>

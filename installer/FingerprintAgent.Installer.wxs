@@ -109,13 +109,14 @@
 
       <!-- 4. InstallFiles (standard MSI action — installs files copied from .wxs) -->
 
-      <!-- 5. SeedProgramDataConfig (after files installed, before service start) -->
+      <!-- 5. SeedProgramDataConfig (deferred — runs inside the script AFTER files copied) -->
+      <Custom Action="SetSeedProgramDataConfigData" Before="SeedProgramDataConfig"><![CDATA[NOT REMOVE]]></Custom>
       <Custom Action="SeedProgramDataConfig" After="InstallFiles"><![CDATA[NOT REMOVE]]></Custom>
 
       <!-- 6. StartServices (WiX standard action — handled by ServiceControl Start attribute) -->
 
-      <!-- 7. ProbeHealthAfterInstall (after StartServices, before Commit) -->
-      <Custom Action="ProbeHealthAfterInstall" After="StartServices"><![CDATA[NOT REMOVE]]></Custom>
+      <!-- 7. ProbeHealthAfterInstall — C5: after InstallFinalize so the service is truly up -->
+      <Custom Action="ProbeHealthAfterInstall" After="InstallFinalize"><![CDATA[NOT REMOVE]]></Custom>
 
       <!-- 8. Commit (standard MSI) -->
     </InstallExecuteSequence>

@@ -52,19 +52,32 @@
                   Execute="immediate"
                   Return="ignore" />
 
-    <!-- SeedProgramDataConfig: first-install copy / upgrade merge -->
+    <!--
+      C5 fix: SeedProgramDataConfig now runs DEFERRED — an immediate CA sequenced after
+      InstallFiles executed during script generation, BEFORE files were actually copied,
+      so fresh installs failed with FileNotFoundException on the template. Data flows in
+      via the Type-51 setter below (DTF exposes it as session.CustomActionData);
+      Impersonate=no grants the ProgramData write LocalSystem rights.
+    -->
+    <CustomAction Id="SetSeedProgramDataConfigData"
+                  Property="SeedProgramDataConfig"
+                  Value="InstallTemplatePath=[INSTALLFOLDER]config.template.json;ProgramDataConfigPath=[PROGRAMDATAFOLDER]config.json"
+                  Execute="immediate"
+                  Return="check" />
     <CustomAction Id="SeedProgramDataConfig"
                   BinaryKey="CustomActionsCA"
                   DllEntry="SeedProgramDataConfig"
-                  Execute="immediate"
-                  Return="check">
-      <CustomActionData>
-        InstallTemplatePath=[InstallTemplatePath]
-        ProgramDataConfigPath=[ProgramDataConfigPath]
-      </CustomActionData>
-    </CustomAction>
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
 
-    <!-- ProbeHealthAfterInstall: HTTP GET /health on 127.0.0.1:5043 -->
+    <!--
+      C5 note: ProbeHealthAfterInstall stays IMMEDIATE (it writes session properties for the
+      result dialogs) but is sequenced AFTER InstallFinalize in FingerprintAgent.Installer.wxs —
+      immediates placed there run only after the script (incl. StartServices) has executed,
+      so the probe sees a genuinely running service. Trade-off: failure surfaces as error
+      without file rollback since InstallFinalize already committed.
+    -->
     <CustomAction Id="ProbeHealthAfterInstall"
                   BinaryKey="CustomActionsCA"
                   DllEntry="ProbeHealthAfterInstall"
