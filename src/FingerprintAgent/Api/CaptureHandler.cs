@@ -20,6 +20,8 @@ namespace FingerprintAgent.Api
             _logger = logger;
         }
 
+        private const int MaxBodyBytes = 1 * 1024 * 1024;
+
         public async Task HandleAsync(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null, CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrEmpty(correlationId))
@@ -29,10 +31,19 @@ namespace FingerprintAgent.Api
 
             try
             {
-                string body;
-                using (var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding))
+                var (body, tooLarge) = await ReadBodyAsync(
+                    // Deliberately no shutdown token here: it would abort pre-cancelled requests
+                    // and turn the documented 503 into a 500. The 1 MB cap bounds this read.
+                    context.Request.InputStream, context.Request.ContentEncoding, MaxBodyBytes, CancellationToken.None);
+
+                if (tooLarge)
+
+                if (tooLarge)
                 {
-                    body = await reader.ReadToEndAsync();
+                    const string errorMessage = "Request body too large";
+                    _logger?.Error(correlationId, $"Capture rejected — PAYLOAD_TOO_LARGE: {errorMessage}");
+                    await WriteErrorResponseAsync(context, 413, false, errorMessage, "PAYLOAD_TOO_LARGE", null, null, correlationId);
+                    return;
                 }
 
                 _logger?.Info(correlationId, "Capture request received");
@@ -55,6 +66,15 @@ namespace FingerprintAgent.Api
                     const string errorMessage = "Invalid JSON in request body";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
                     await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    return;
+                }
+
+                // JSON literal "null" deserializes to a null instance — reject as 400, not NRE → 500.
+                if (request == null)
+                {
+                    const string nullBodyError = "Invalid JSON in request body";
+                    _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {nullBodyError}");
+                    await WriteErrorResponseAsync(context, 400, false, nullBodyError, "INVALID_REQUEST", null, null, correlationId);
                     return;
                 }
 
@@ -144,6 +164,24 @@ namespace FingerprintAgent.Api
                     return (500, errorCode);
                 default:
                     return (500, errorCode ?? "CAPTURE_FAILED");
+            }
+        }
+
+        /// <summary>Reads at most maxBytes; tooLarge=true when the payload exceeds the cap.</summary>
+        private static async Task<(string body, bool tooLarge)> ReadBodyAsync(
+            Stream stream, Encoding encoding, int maxBytes, CancellationToken ct)
+        {
+            var buffer = new byte[8192];
+            using (var ms = new MemoryStream())
+            {
+                int read;
+                while ((read = await stream.ReadAsync(buffer, 0, buffer.Length, ct).ConfigureAwait(false)) > 0)
+                {
+                    if (ms.Length + read > maxBytes)
+                        return (null, true);
+                    ms.Write(buffer, 0, read);
+                }
+                return (encoding.GetString(ms.ToArray()), false);
             }
         }
 
