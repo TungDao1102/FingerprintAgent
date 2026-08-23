@@ -30,7 +30,10 @@ The Host project's `RootNamespace` is `FingerprintAgent` and `AssemblyName` is `
 Console mode reads `FA_CONSOLE_TIMEOUT` (seconds) for CI auto-shutdown; 0/negative = infinite. Default waits for Ctrl+C.
 
 ### ZKTeco static singleton teardown
-`ZkTecoFingerHost.Close()` is process-wide and terminates native context for ALL ZKTeco instances. Called **once** at service shutdown (in `Program.cs` console path + `FingerprintAgentService`). Individual `ZKTecoAdapter.Dispose()` must **NOT** call it.
+`ZkNativeHost.Close()` (raw `libzkfp.dll` P/Invoke — the ZkTecoFingerPrint NuGet wrapper was removed) is
+process-wide and terminates native context for ALL ZKTeco instances. Called **once** at service shutdown
+(in `Program.cs` console path + `FingerprintAgentService`). Individual 
+`ZKTecoAdapter.Dispose()` must **NOT** call it.
 
 ### SDK presence is conditional
 Vendor SDKs are gated by file existence in `lib/`:
@@ -116,7 +119,7 @@ dotnet test  FingerprintAgent.sln          # all tests (real-device tests skip i
 .\scripts\Setup-VendorSdk.ps1               # downloads vendor SDKs to lib/
 ```
 
-**No CI/CD** — `.github/workflows/` absent. No MSI installer yet.
+**CI/CD** — `.github/workflows/e2e.yml` (manual dispatch): builds solution + MSI, installs, runs Playwright. MSI source in `installer/` (WiX 3.x; build via `dotnet build installer/FingerprintAgent.Installer.wixproj -c Release /p:WixToolPath=…`).
 
 ---
 

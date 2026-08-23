@@ -1,5 +1,29 @@
 # FingerprintAgent — Release-Crash Review
 
+> **TRẠNG THÁI FIX (2026-08-22, sau đợt sửa theo review — CHƯA commit):**
+>
+> | Finding | Trạng thái | Ghi chú |
+> |---|---|---|
+> | C1 MSI thiếu file | ✅ FIXED | `Service.wxs` cmp_Binaries liệt kê đủ 24 DLL + exe.config; ⚠️ chưa build-verify MSI (thiếu WiX locally) — bắt buộc chạy e2e workflow |
+> | C2 WiX TargetDir | ✅ FIXED | wixproj tự suy ra đường dẫn + truyền `-d…TargetDir` cho candle |
+> | C3 race song-song | ✅ FIXED (trong migration bf7d3ca) | SemaphoreSlim serialize ScanAsync; residue M1 cũng đã fix |
+> | C4 SecuGen compile | ✅ FIXED | thêm `using SecuGen.FDxSDKPro.Windows` trong `#if`; ⚠️ chưa compile-verify với SDK thật |
+> | C5 immediate CAs | ✅ FIXED | Seed → deferred+Type51 setter; ProbeHealth → After=InstallFinalize; ⚠️ cần e2e xác nhận |
+> | C6 global handlers | ✅ FIXED | Host Program.cs: UnhandledException + UnobservedTaskException → EventLog + crash.log |
+> | H1 log rotation | ✅ FIXED | AgentLogger rotate theo maxSizeMb/maxFiles, fail-safe |
+> | H2 download timeout | ✅ FIXED | HttpClient Infinite + per-request: API 30s / MSI 15min, đều cancellable. *Đính chính review:* timeout cũ KHÔNG tự-disable update (nhánh OCE không gọi HandleInstallFailure) — chỉ là không bao giờ tải xong |
+> | H3 console shutdown | ✅ FIXED | double-Close đã wrap (trước migration); FA_CONSOLE_TIMEOUT giờ dừng service sạch |
+> | H4 budget 20s | ✅ FIXED | totalCts bao cả SCAN-06 retry; blocking-adapter CT là giới hạn kiến trúc (đã ghi nhận) |
+> | H5/H6 | ⏸️ BỎ QUA theo yêu cầu | Test `HealthHandler_Returns503_WhenDisconnectedAndMaxBackoff` đã sửa assertion về hợp đồng thực tế (step cap=3) — nó trước đây flaky vì mã hóa hành vi H6 chưa từng được implement |
+> | H7 body/null | ✅ FIXED | ReadBodyAsync giới hạn 1MB→413; JSON null→400 |
+> | H8 counter leak | ✅ FIXED | CT check chuyển vào trong try (finally luôn chạy) |
+> | M1–M9 | ✅ FIXED (M1 gate-dispose, M2 skip-host-close khi capture bay, M3 timer async + state, M4 CORS order, M5 eventlog≥Warn, M6 docs, M7, M8 scan-limit 8KB, M9 stopLock + sửa luôn bug Dispose-only-leak-listener) |
+>
+> **Kết quả kiểm chứng:** build Release 0/0; test **208/214** (6 fail = đúng nhóm environmental
+> yêu cầu hardware, xem §10.2). Installer changes chỉ mới inspection-verified.
+
+---
+
 **Ngày:** 2026-08-22
 **HEAD:** `72540bb` (test(04): regression tests for security.bindIp, CT threading, ProbeConnection guard)
 **Phạm vi:** spec `.md` (AGENTS, SCANNER_SETUP, DEPLOYMENT, README, E2E README) + review cũ

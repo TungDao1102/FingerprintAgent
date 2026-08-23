@@ -9,8 +9,8 @@ forwards the captured PNG to a Node `http.createServer` mock backend.
 
 - Node.js 22 LTS (or later 20.x).
 - FingerprintAgent Windows Service **already running** on
-  `127.0.0.1:5043` with `scanner.mockMode: true` (the default in shipped
-  `config.json`).
+  `127.0.0.1:5043` with `scanner.mockMode: true` (the shipped template defaults to
+  `false`; flip it in `C:\ProgramData\FingerprintAgent\config.json` for E2E).
 
 ## Install + run
 

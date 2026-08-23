@@ -18,7 +18,7 @@ ZK4500, ZK6500, ZK7500, ZK8500, ZK8500R, ZK9500, SLK20R, SLK20M
 ### NuGet Package
 The `ZkTecoFingerPrint` NuGet (MIT, v1.2.1, ~13-star GitHub project) wraps the native DLLs and provides a sane async C# API.
 
-**Supply-chain note:** This is a small open-source project. Pin to exact version `1.2.1` in `FingerprintAgent.csproj`. The wrapper exposes two overloads of `AcquireFingerprintAsync`; `ZKTecoAdapter` uses the buffer-overload (`AcquireFingerprintAsync(byte[], CancellationToken)`) to avoid the parameter-106 query that fails on ZK9500 firmware. If the package is ever abandoned, the raw `zkfp2` P/Invoke path documented in `.planning/phases/02-multi-vendor-scanner-adapters/02-RESEARCH.md` §5 Option A remains a viable fallback.
+**Implementation note (updated):** The `ZkTecoFingerPrint` NuGet wrapper was **removed** — the adapter now talks to `libzkfp.dll` directly via `Adapters/ZkNativeHost.cs` (raw P/Invoke, prior art: `tests/.../ZkSdkProbe.cs` + commit `4c7c358`). Capture sizes its own width×height buffer, skipping the parameter-106 query that fails on ZK9500 firmware. Transitive deps SourceAFIS/System.Reactive/Dahomey.Cbor are gone. If ZkNativeHost ever needs replacing, the historical wrapper remains documented in `.planning/phases/02-multi-vendor-scanner-adapters/02-RESEARCH.md` §5 Option B and the old review `.planning/reviews/release-crash-review.md` Phụ lục A.
 
 ### Setup Steps
 1. Ensure ZKFinger SDK is installed and the ZKTeco device USB driver is loaded
@@ -51,7 +51,7 @@ The underlying `ZKFPM_AcquireFingerprint` call has an internal ~1s timeout per a
 
 The raw `ZkResponse` string (e.g., `ERROR_CAPTURE`) is preserved in `VendorErrorCode` for IT debugging.
 
-### ZKTeco Fallback (if NuGet is unavailable)
+### ZKTeco Implementation (raw P/Invoke — current)
 If `ZkTecoFingerPrint` NuGet cannot be used, implement the raw `zkfp2` P/Invoke as documented in `02-RESEARCH.md` §5 Option A. Replace the `ZkTecoFingerPrint` NuGet calls in `ZKTecoAdapter.cs` with direct DllImport declarations for `ZKFPM_Init`, `ZKFPM_GetDeviceCount`, `ZKFPM_OpenDevice`, `ZKFPM_CloseDevice`, and `ZKFPM_AcquireFingerprint`. This path was previously used in commit `4c7c358` based on a misdiagnosis that the wrapper had a bug; the actual issue was calling the parameterless overload of `AcquireFingerprintAsync` (which queries parameter 106, unimplemented on ZK9500).
 
 ---
