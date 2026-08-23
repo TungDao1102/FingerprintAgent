@@ -25,7 +25,9 @@ namespace FingerprintAgent.Logging
 
         private readonly string _filePath;
         private readonly LogLevel _minLevel;
-        private readonly StreamWriter _writer;
+        private readonly long _maxSizeBytes;
+        private readonly int _maxFiles;
+        private StreamWriter _writer;
         private readonly object _lock = new object();
         private bool _disposed;
 
@@ -35,6 +37,8 @@ namespace FingerprintAgent.Logging
 
             _filePath = config.File;
             _minLevel = ParseLogLevel(config.Level);
+            _maxSizeBytes = config.MaxSizeMb > 0 ? config.MaxSizeMb * 1024L * 1024L : 0;
+            _maxFiles = Math.Max(2, config.MaxFiles);
 
             var directory = Path.GetDirectoryName(_filePath);
             if (!string.IsNullOrEmpty(directory))
@@ -104,11 +108,63 @@ namespace FingerprintAgent.Logging
 
             lock (_lock)
             {
+                if (_writer == null) return;
+
+                RotateIfNeeded();
+                if (_writer == null) return;
+
                 _writer.WriteLine(entry);
                 _writer.Flush();
             }
 
-            TryWriteEventLog(entry, level);
+            if (level >= LogLevel.Warn)
+            {
+                TryWriteEventLog(entry, level);
+            }
+        }
+
+        private void RotateIfNeeded()
+        {
+            if (_maxSizeBytes <= 0) return;
+
+            var fs = _writer.BaseStream as FileStream;
+            if (fs == null || fs.Length < _maxSizeBytes) return;
+
+            try { _writer.Dispose(); } catch { }
+            _writer = null;
+
+            try
+            {
+                string dir = Path.GetDirectoryName(_filePath);
+                string name = Path.GetFileName(_filePath);
+
+                for (int i = _maxFiles - 2; i >= 1; i--)
+                {
+                    ShiftFile(Path.Combine(dir, $"{name}.{i}"), Path.Combine(dir, $"{name}.{i + 1}"));
+                }
+                ShiftFile(_filePath, Path.Combine(dir, $"{name}.1"));
+            }
+            catch
+            {
+                // AV/IO lock during shift: keep appending to the same file rather than losing output.
+            }
+
+            try
+            {
+                var stream = new FileStream(_filePath, FileMode.Append, FileAccess.Write, FileShare.Read);
+                _writer = new StreamWriter(stream) { AutoFlush = true };
+            }
+            catch
+            {
+                // Reopen failed: _writer stays null; Write() drops entries until a later success.
+            }
+        }
+
+        private static void ShiftFile(string src, string dst)
+        {
+            if (!File.Exists(src)) return;
+            if (File.Exists(dst)) File.Delete(dst);
+            File.Move(src, dst);
         }
 
         private string RedactIfImageData(string message)
@@ -119,6 +175,12 @@ namespace FingerprintAgent.Logging
             }
 
             var trimmed = message.Trim();
+            // Oversized entries skip the regex — nested-quantifier backtracking is O(n²) on hostile input.
+            if (trimmed.Length > RedactionScanLimit)
+            {
+                return "[REDACTED: oversized log entry]";
+            }
+
             if (trimmed.Length > 40 && Base64Pattern.IsMatch(trimmed))
             {
                 return "[REDACTED: potential image data]";
@@ -126,6 +188,8 @@ namespace FingerprintAgent.Logging
 
             return message;
         }
+
+        private const int RedactionScanLimit = 8192;
 
         private static LogLevel ParseLogLevel(string level)
         {
