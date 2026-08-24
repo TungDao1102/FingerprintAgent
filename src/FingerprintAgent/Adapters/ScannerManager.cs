@@ -9,7 +9,7 @@ namespace FingerprintAgent.Adapters
 {
     /// <summary>
     /// Composite IScannerAdapter that tries multiple adapters in priority order
-    /// until one succeeds. Handles 20-second total timeout (D-06, extended to give
+    /// until one succeeds. Handles 25-second total timeout (D-06, extended to give
     /// the active adapter's full rolling-capture window on ZK9500) and per-adapter
     /// ~3-second timeout via linked CancellationTokenSource.
     ///
@@ -309,9 +309,9 @@ namespace FingerprintAgent.Adapters
         /// SCAN-06 backoff: if _activeAdapter is set but reports IsConnected=false,
         /// retry Initialize() once before falling through to normal priority fallback.
         ///
-        /// Total budget: 20 seconds across all adapter attempts (D-06, extended to
+        /// Total budget: 25 seconds across all adapter attempts (D-06, extended to
         /// accommodate the active adapter's full rolling-capture window on ZK9500).
-        /// Per-adapter budget is NOT enforced — ZKTecoAdapter needs 15s rolling-capture
+        /// Per-adapter budget is NOT enforced — ZKTecoAdapter needs ~22s rolling-capture
         /// for UX (D-13: centralized timeout only).
         /// </summary>
         public async Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
@@ -330,7 +330,7 @@ namespace FingerprintAgent.Adapters
                 // Budget opens BEFORE SCAN-06: the reconnect retry shares the 20s clock.
                 using (var totalCts = CancellationTokenSource.CreateLinkedTokenSource(_cts.Token, cancellationToken))
                 {
-                    totalCts.CancelAfter(TimeSpan.FromSeconds(20));
+                    totalCts.CancelAfter(TimeSpan.FromSeconds(25));
 
             // SCAN-06 backoff: retry active adapter once if it was previously connected
             // but is now disconnected (temporary disconnection / device busy)
@@ -366,7 +366,7 @@ namespace FingerprintAgent.Adapters
                     if (totalCts.Token.IsCancellationRequested)
                     {
                         _logger?.Warn(null, "ScannerManager: total timeout exceeded");
-                        return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture timed out after 20 seconds across all adapters");
+                        return CaptureResult.Fail("CAPTURE_TIMEOUT", "Capture timed out after 25 seconds across all adapters");
                     }
 
                     try

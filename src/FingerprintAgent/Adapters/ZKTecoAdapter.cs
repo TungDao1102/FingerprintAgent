@@ -21,11 +21,11 @@ namespace FingerprintAgent.Adapters
     /// ZKFP_ERR_CAPTURE (-8) immediately, surfacing as a capture failure without ever
     /// reaching the blocking capture. Sizing our own buffers skips that query entirely.
     ///
-    /// Rolling-capture: the native blocking call has an internal timeout (~1s on ZK9500).
-    /// We retry on capture errors only while elapsed time is below the 15-second adapter
-    /// budget (under ScannerManager's total budget, D-06). The user needs time to click
-    /// button → reach for scanner → place finger.
-    /// </summary>
+        /// Rolling-capture: the native blocking call has an internal timeout (~1s on ZK9500).
+        /// We retry on capture errors only while elapsed time is below the 22-second adapter
+        /// budget (under ScannerManager's total 25s budget, D-06). The user needs time to click
+        /// button → reach for scanner → place finger.
+        /// </summary>
     public sealed class ZKTecoAdapter : IScannerAdapter, IDisposable
     {
         // Guards concurrent calls to EnsureHostInitialized(). The native ZKTeco host
@@ -264,7 +264,7 @@ namespace FingerprintAgent.Adapters
 
                 byte[] imageBuffer = new byte[width * height];
 
-                const int captureBudgetMs = 15000;
+                const int captureBudgetMs = 22000;
                 const int retryDelayMs = 100;
                 var stopwatch = Stopwatch.StartNew();
                 int lastResult = ZkNativeHost.ZKFP_ERR_CAPTURE;
@@ -289,7 +289,12 @@ namespace FingerprintAgent.Adapters
                 {
                     int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
                     _vendorErrorCode = ErrorCodeToString(lastResult);
-                    return CaptureResult.Fail("CAPTURE_FAILED", ErrorCodeToUserMessage(lastResult, elapsedSec));
+
+                    bool isTimeout = stopwatch.ElapsedMilliseconds >= captureBudgetMs
+                                  || cancellationToken.IsCancellationRequested
+                                  || lastResult == ZkNativeHost.ZKFP_ERR_TIMEOUT;
+                    string code = isTimeout ? "CAPTURE_TIMEOUT" : "CAPTURE_FAILED";
+                    return CaptureResult.Fail(code, ErrorCodeToUserMessage(lastResult, elapsedSec));
                 }
 
                 // imageBuffer has been populated by AcquireOnce (Marshal.Copy inside try, before FreeHGlobal)

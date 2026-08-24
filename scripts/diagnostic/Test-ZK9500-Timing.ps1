@@ -34,25 +34,36 @@ function Send-Capture($label, $fingerPlaced) {
     Write-Host "[$label] Sending request at $(Get-Date -Format 'HH:mm:ss.fff')"
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $resp = Invoke-RestMethod -Uri $endpoint -Method POST -ContentType "application/json" -Body $body -TimeoutSec 30
+        $resp = Invoke-RestMethod -Uri $endpoint -Method POST -ContentType "application/json" -Body $body -TimeoutSec 35
         $sw.Stop()
         Write-Host ("[{0}] SUCCESS in {1:N2}s | deviceId={2}" -f $label, $sw.Elapsed.TotalSeconds, $resp.deviceId) -ForegroundColor Green
-        return @{ Success = $true; ElapsedSec = $sw.Elapsed.TotalSeconds; Response = $resp }
+        return @{ Success = $true; ElapsedSec = $sw.Elapsed.TotalSeconds; StatusCode = 200; ErrorCode = $null; Response = $resp }
     } catch {
         $sw.Stop()
         $msg = $_.Exception.Message
-        Write-Host ("[{0}] FAIL after {1:N2}s | {2}" -f $label, $sw.Elapsed.TotalSeconds, $msg) -ForegroundColor Red
-        # Try to extract HTTP body from error
-        $body = $_.Exception.Response
-        if ($body) {
+        $statusCode = $null
+        $errorCode = $null
+        $bodyText = $null
+        $resp = $_.Exception.Response
+        if ($resp) {
+            $statusCode = [int]$resp.StatusCode
             try {
-                $stream = $body.GetResponseStream()
+                $stream = $resp.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($stream)
                 $bodyText = $reader.ReadToEnd()
-                Write-Host ("[{0}] Body: {1}" -f $label, $bodyText) -ForegroundColor DarkYellow
+                if ($bodyText) {
+                    try {
+                        $parsed = $bodyText | ConvertFrom-Json -ErrorAction Stop
+                        $errorCode = $parsed.errorCode
+                    } catch {}
+                }
             } catch {}
         }
-        return @{ Success = $false; ElapsedSec = $sw.Elapsed.TotalSeconds; Error = $msg }
+        Write-Host ("[{0}] FAIL after {1:N2}s | HTTP {2} {3}" -f $label, $sw.Elapsed.TotalSeconds, $statusCode, $msg) -ForegroundColor Red
+        if ($bodyText) {
+            Write-Host ("[{0}] Body: {1}" -f $label, $bodyText) -ForegroundColor DarkYellow
+        }
+        return @{ Success = $false; ElapsedSec = $sw.Elapsed.TotalSeconds; StatusCode = $statusCode; ErrorCode = $errorCode; Error = $msg }
     }
 }
 
@@ -71,12 +82,12 @@ if ($health.status -eq 'unreachable') {
     exit 1
 }
 
-# Test 1: No finger (baseline - should hit SDK timeout)
+# Test 1: No finger (baseline - should hit adapter rolling-capture budget)
 Write-Host ""
-Write-Host "TEST 1: No finger — measures native SDK timeout"
-Write-Host "  Expected: 5-10s with ERROR_CAPTURE (SDK native timeout)"
-Write-Host "  If <4s: Initialize() failed (not SDK timeout)"
-Write-Host "  If >10s: ScannerManager 10s timeout fired first"
+Write-Host "TEST 1: No finger — measures adapter rolling-capture budget"
+Write-Host "  Expected: 22-25s fail with HTTP 504 CAPTURE_TIMEOUT (adapter 22s budget exhausted)"
+Write-Host "  If <22s: unexpected early exit (possible Initialize() or early-budget regression)"
+Write-Host "  If >25s: ScannerManager 25s central timeout fired (adapter hung beyond budget)"
 Read-Host "  Press ENTER when ready"
 $t1 = Send-Capture "NO_FINGER" $false
 
@@ -84,8 +95,8 @@ $t1 = Send-Capture "NO_FINGER" $false
 Write-Host ""
 Write-Host "TEST 2: Place finger on scanner BEFORE pressing ENTER"
 Write-Host "  Keep finger on scanner steady. Expected: SUCCESS in 1-3s"
-Write-Host "  If 5-10s with ERROR_CAPTURE: SDK bug — does not detect pre-placed finger"
-Write-Host "  If >10s: ScannerManager timeout fired (SDK hung)"
+Write-Host "  If 4-22s with ERROR_CAPTURE: SDK bug — does not detect pre-placed finger"
+Write-Host "  If >22s: rolling-capture budget exhausted without detecting finger"
 Read-Host "  Press ENTER after finger is firmly on scanner"
 $t2 = Send-Capture "FINGER_PRE" $true
 
@@ -103,14 +114,33 @@ Write-Host "[FINGER_DURING] Sending request NOW at $(Get-Date -Format 'HH:mm:ss.
 Write-Host "[FINGER_DURING] >>> PLACE FINGER ON SCANNER NOW <<<" -ForegroundColor Magenta
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    $resp = Invoke-RestMethod -Uri $endpoint -Method POST -ContentType "application/json" -Body $body -TimeoutSec 30
+    $resp = Invoke-RestMethod -Uri $endpoint -Method POST -ContentType "application/json" -Body $body -TimeoutSec 35
     $sw.Stop()
     Write-Host ("[FINGER_DURING] SUCCESS in {0:N2}s" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
-    $t3 = @{ Success = $true; ElapsedSec = $sw.Elapsed.TotalSeconds }
+    $t3 = @{ Success = $true; ElapsedSec = $sw.Elapsed.TotalSeconds; StatusCode = 200; ErrorCode = $null }
 } catch {
     $sw.Stop()
-    Write-Host ("[FINGER_DURING] FAIL after {0:N2}s | {1}" -f $sw.Elapsed.TotalSeconds, $_.Exception.Message) -ForegroundColor Red
-    $t3 = @{ Success = $false; ElapsedSec = $sw.Elapsed.TotalSeconds }
+    $msg = $_.Exception.Message
+    $statusCode = $null
+    $errorCode = $null
+    $bodyText = $null
+    $resp = $_.Exception.Response
+    if ($resp) {
+        $statusCode = [int]$resp.StatusCode
+        try {
+            $stream = $resp.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream)
+            $bodyText = $reader.ReadToEnd()
+            if ($bodyText) {
+                try { $errorCode = ($bodyText | ConvertFrom-Json -ErrorAction Stop).errorCode } catch {}
+            }
+        } catch {}
+    }
+    Write-Host ("[FINGER_DURING] FAIL after {0:N2}s | HTTP {1} {2}" -f $sw.Elapsed.TotalSeconds, $statusCode, $msg) -ForegroundColor Red
+    if ($bodyText) {
+        Write-Host ("[FINGER_DURING] Body: {0}" -f $bodyText) -ForegroundColor DarkYellow
+    }
+    $t3 = @{ Success = $false; ElapsedSec = $sw.Elapsed.TotalSeconds; StatusCode = $statusCode; ErrorCode = $errorCode; Error = $msg }
 }
 
 # Verdict
@@ -119,21 +149,27 @@ Write-Host "============================================================"
 Write-Host "  VERDICT"
 Write-Host "============================================================"
 
-# Adapter has an 8s rolling-capture budget (per fix(03)). Total ScannerManager budget is 10s.
-# Observed server-side latency is reported by the script; HTTP overhead adds ~1-2s.
+# ZKTecoAdapter has a 22s rolling-capture budget. ScannerManager has a 25s central timeout.
+# Observed server-side latency is reported by the script; HTTP overhead adds ~1-3s.
 
 $verdict = ""
 
-# T1: No finger — expected to FAIL by exhausting the 8s adapter retry budget
+# T1: No finger — expected to FAIL by exhausting the 22s adapter rolling-capture budget
 if ($t1.Success) {
     # SDK captured something with no finger — likely sensor residue/phantom. Investigate cleanliness.
     $verdict += "[!] T1 captured in ~$([Math]::Round($t1.ElapsedSec,1))s WITH NO FINGER — sensor residue or spurious detection (clean sensor and retry)`n"
-} elseif ($t1.ElapsedSec -ge 7 -and $t1.ElapsedSec -le 12) {
-    $verdict += "[OK] T1 fail at ~$([Math]::Round($t1.ElapsedSec,1))s = adapter 8s budget exhausted (expected, no finger)`n"
-} elseif ($t1.ElapsedSec -gt 12) {
-    $verdict += "[!] T1 fail >12s — ScannerManager 10s timeout fired (adapter hung beyond budget, possible SDK regression)`n"
+} elseif ($t1.StatusCode -eq 504 -and $t1.ErrorCode -eq 'CAPTURE_TIMEOUT') {
+    if ($t1.ElapsedSec -ge 21 -and $t1.ElapsedSec -le 26) {
+        $verdict += "[OK] T1 fail at ~$([Math]::Round($t1.ElapsedSec,1))s with HTTP 504 CAPTURE_TIMEOUT — adapter 22s budget exhausted (expected, no finger)`n"
+    } elseif ($t1.ElapsedSec -gt 26) {
+        $verdict += "[!] T1 fail at ~$([Math]::Round($t1.ElapsedSec,1))s with HTTP 504 — ScannerManager 25s central timeout fired (adapter hung beyond budget, possible SDK regression)`n"
+    } else {
+        $verdict += "[!] T1 fail at ~$([Math]::Round($t1.ElapsedSec,1))s with HTTP 504 — earlier than expected (possible Initialize() or early-budget regression)`n"
+    }
+} elseif ($t1.StatusCode -eq 500) {
+    $verdict += "[!] T1 fail with HTTP 500 $($t1.ErrorCode) at ~$([Math]::Round($t1.ElapsedSec,1))s — expected HTTP 504 CAPTURE_TIMEOUT (check ZKTecoAdapter timeout mapping)`n"
 } else {
-    $verdict += "[!] T1 fail in <7s — adapter budget not exhausted, possible Initialize() or early-exit regression`n"
+    $verdict += "[!] T1 fail at ~$([Math]::Round($t1.ElapsedSec,1))s with HTTP $($t1.StatusCode) $($t1.ErrorCode) — unexpected status code`n"
 }
 
 # T2: Finger pre-placed — expected SUCCESS quickly (SDK detects on first poll)
@@ -142,15 +178,15 @@ if ($t2.Success) {
     if ($t2Elapsed -le 5) {
         $verdict += "[OK] T2 succeeded in ${t2Elapsed}s with finger pre-placed — SDK detects immediately`n"
     } else {
-        $verdict += "[OK] T2 succeeded in ${t2Elapsed}s (slow but within 8s budget — SDK caught finger mid-retry)`n"
+        $verdict += "[OK] T2 succeeded in ${t2Elapsed}s (slow but within 22s budget — SDK caught finger mid-retry)`n"
     }
-} elseif ($t2.ElapsedSec -ge 4 -and $t2.ElapsedSec -le 12) {
+} elseif ($t2.ElapsedSec -ge 4 -and $t2.ElapsedSec -le 22) {
     $verdict += "[ROOT CAUSE = Sensor/SDK] T2 fail with finger pre-placed in ~$([Math]::Round($t2.ElapsedSec,1))s — sensor not detecting finger (driver/calibration issue)`n"
-} elseif ($t2.ElapsedSec -gt 12) {
-    $verdict += "[ROOT CAUSE = SDK HANG] T2 timeout at ScannerManager — SDK hung beyond 10s`n"
+} elseif ($t2.ElapsedSec -gt 22) {
+    $verdict += "[ROOT CAUSE = SDK HANG] T2 fail at ~$([Math]::Round($t2.ElapsedSec,1))s — rolling-capture budget exhausted without detecting finger`n"
 }
 
-# T3: Finger during request — expected SUCCESS within 8s rolling window
+# T3: Finger during request — expected SUCCESS within 22s rolling window
 if ($t3.Success -and -not $t2.Success) {
     $verdict += "[INSIGHT] T3 succeeded but T2 failed — SDK has 'first-time' detection issue with pre-placed finger`n"
 }
