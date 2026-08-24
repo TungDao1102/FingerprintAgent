@@ -33,6 +33,16 @@
     <Version Condition="'$(Version)' == ''">0.1.0</Version>
     <!-- Don't auto-include .cs files as compile items; this project only orchestrates candle.exe. -->
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!--
+      OutputPath MUST live in the top-level PropertyGroup (not inside the Build target).
+      wix.targets declares InitialTargets="_CheckForInvalidConfigurationAndPlatform"
+      which reads $(OutputPath) during global evaluation, before any user target runs.
+      Properties declared inside <Target><PropertyGroup> are only visible during that
+      target's execution, so the check would fail with:
+        "The OutputPath property is not set for this project. Configuration='Release' Platform='x86'"
+      from C:\wix314\wix.targets(473,7).
+    -->
+    <OutputPath>bin\$(Configuration)\</OutputPath>
   </PropertyGroup>
 
   <Import Project="$(WixToolPath)\wix.targets" Condition="Exists('$(WixToolPath)\wix.targets')" />
@@ -71,7 +81,6 @@
       We just need to wire up the bin directory and dependency on the source files.
     -->
     <PropertyGroup>
-      <OutputPath>bin\$(Configuration)\</OutputPath>
       <WixToolDir>$([MSBuild]::EnsureTrailingSlash('$(WixToolPath)'))</WixToolDir>
       <CandlePath>$(WixToolDir)candle.exe</CandlePath>
       <LightPath>$(WixToolDir)light.exe</LightPath>
