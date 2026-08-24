@@ -1,9 +1,6 @@
 #nullable enable
 using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
@@ -77,7 +74,19 @@ namespace FingerprintAgent.Adapters
             [ZkNativeHost.ZKFP_ERR_EXTRACT_FP]     = "ERROR_EXTRACT_FP",
             [ZkNativeHost.ZKFP_ERR_ABORT]          = "ERROR_ABORT",
             [ZkNativeHost.ZKFP_ERR_MEMORY]         = "ERROR_MEMORY_NOT_ENOUGH",
-            [ZkNativeHost.ZKFP_ERR_BUSY]           = "ERROR_BUSY"
+            [ZkNativeHost.ZKFP_ERR_BUSY]           = "ERROR_BUSY",
+            [ZkNativeHost.ZKFP_ERR_ADD_FINGER]     = "ERROR_ADD_FINGER",
+            [ZkNativeHost.ZKFP_ERR_DELETE_FINGER]  = "ERROR_DELETE_FINGER",
+            [ZkNativeHost.ZKFP_ERR_FAIL]           = "ERROR_FAIL",
+            [ZkNativeHost.ZKFP_ERR_CANCEL]         = "ERROR_CANCEL",
+            [ZkNativeHost.ZKFP_ERR_NOT_OPENED]     = "ERROR_NOT_OPENED",
+            [ZkNativeHost.ZKFP_ERR_NOT_INIT]       = "ERROR_NOT_INIT",
+            [ZkNativeHost.ZKFP_ERR_TIMEOUT]        = "ERROR_TIMEOUT",
+            [ZkNativeHost.ZKFP_ERR_VERIFY]         = "ERROR_VERIFY",
+            [ZkNativeHost.ZKFP_ERR_MERGE]          = "ERROR_MERGE",
+            [ZkNativeHost.ZKFP_ERR_ALREADY_OPENED] = "ERROR_ALREADY_OPENED",
+            [ZkNativeHost.ZKFP_ERR_LOAD_IMAGE]     = "ERROR_LOAD_IMAGE",
+            [ZkNativeHost.ZKFP_ERR_ANALYZE_IMAGE]  = "ERROR_ANALYZE_IMAGE"
         };
 
         public bool IsConnected => _isConnected && _handle != IntPtr.Zero;
@@ -284,7 +293,7 @@ namespace FingerprintAgent.Adapters
                 }
 
                 // imageBuffer has been populated by AcquireOnce (Marshal.Copy inside try, before FreeHGlobal)
-                byte[] pngBytes = ToPngGrayscale(imageBuffer, width, height);
+                byte[] pngBytes = PngEncoder.ToPngGrayscale(imageBuffer, width, height);
 
                 string verificationData;
                 using (var sha256 = SHA256.Create())
@@ -335,10 +344,11 @@ namespace FingerprintAgent.Adapters
         private async Task<int> AcquireOnce(IntPtr handle, byte[] imageBuffer, CancellationToken ct)
         {
             IntPtr imagePtr = Marshal.AllocHGlobal(imageBuffer.Length);
-            IntPtr templatePtr = Marshal.AllocHGlobal(TemplateBufferSize);
+            IntPtr templatePtr = IntPtr.Zero;
             try
             {
-                int cbTemplate = TemplateBufferSize;
+                templatePtr = Marshal.AllocHGlobal(TemplateBufferSize);
+                uint cbTemplate = (uint)TemplateBufferSize;
                 int result = await Task.Run(() =>
                     ZkNativeHost.AcquireFingerprint(
                         handle, imagePtr, (uint)imageBuffer.Length,
@@ -353,37 +363,10 @@ namespace FingerprintAgent.Adapters
             }
             finally   // W2 fix: FreeHGlobal ALWAYS runs even if Task.Run throws
             {
-                Marshal.FreeHGlobal(templatePtr);
-                Marshal.FreeHGlobal(imagePtr);
-            }
-        }
-
-        private static byte[] ToPngGrayscale(byte[] rawPixels, int width, int height)
-        {
-            using (var bitmap = new Bitmap(width, height, PixelFormat.Format8bppIndexed))
-            {
-                ColorPalette palette = bitmap.Palette;
-                for (int i = 0; i < 256; i++)
-                    palette.Entries[i] = Color.FromArgb(i, i, i);
-                bitmap.Palette = palette;
-
-                var bitmapData = bitmap.LockBits(
-                    new Rectangle(0, 0, width, height),
-                    ImageLockMode.WriteOnly,
-                    PixelFormat.Format8bppIndexed);
-
-                int stride = bitmapData.Stride;
-                for (int row = 0; row < height; row++)
-                {
-                    Marshal.Copy(rawPixels, row * width, bitmapData.Scan0 + row * stride, width);
-                }
-                bitmap.UnlockBits(bitmapData);
-
-                using (var pngStream = new MemoryStream())
-                {
-                    bitmap.Save(pngStream, ImageFormat.Png);
-                    return pngStream.ToArray();
-                }
+                if (templatePtr != IntPtr.Zero)
+                    Marshal.FreeHGlobal(templatePtr);
+                if (imagePtr != IntPtr.Zero)
+                    Marshal.FreeHGlobal(imagePtr);
             }
         }
 
@@ -412,6 +395,10 @@ namespace FingerprintAgent.Adapters
                     return $"ZKTeco: no finger detected within {elapsedSec}s — please place finger on sensor and try again";
                 case ZkNativeHost.ZKFP_ERR_BUSY:
                     return "ZKTeco: scanner is busy with another operation — please retry in a moment";
+                case ZkNativeHost.ZKFP_ERR_ADD_FINGER:
+                    return "ZKTeco: SDK failed to add fingerprint template — please retry";
+                case ZkNativeHost.ZKFP_ERR_DELETE_FINGER:
+                    return "ZKTeco: SDK failed to delete fingerprint template — please retry";
                 case ZkNativeHost.ZKFP_ERR_ABORT:
                     return "ZKTeco: capture aborted by sensor or driver";
                 case ZkNativeHost.ZKFP_ERR_INVALID_HANDLE:
@@ -422,6 +409,26 @@ namespace FingerprintAgent.Adapters
                     return "ZKTeco: scanner not opened — reinitializing, please retry";
                 case ZkNativeHost.ZKFP_ERR_INVALID_PARAM:
                     return "ZKTeco: invalid parameter passed to SDK — please report to IT support";
+                case ZkNativeHost.ZKFP_ERR_TIMEOUT:
+                    return "ZKTeco: SDK timed out waiting for finger — please place finger on sensor and try again";
+                case ZkNativeHost.ZKFP_ERR_CANCEL:
+                    return "ZKTeco: capture cancelled by sensor — please retry";
+                case ZkNativeHost.ZKFP_ERR_NOT_OPENED:
+                    return "ZKTeco: device not opened — reinitializing, please retry";
+                case ZkNativeHost.ZKFP_ERR_NOT_INIT:
+                    return "ZKTeco: SDK not initialized — service will reinitialize, please retry";
+                case ZkNativeHost.ZKFP_ERR_FAIL:
+                    return "ZKTeco: capture failed (generic SDK error) — please retry";
+                case ZkNativeHost.ZKFP_ERR_VERIFY:
+                    return "ZKTeco: SDK fingerprint verification failed — please retry";
+                case ZkNativeHost.ZKFP_ERR_MERGE:
+                    return "ZKTeco: SDK template merge failed — please retry";
+                case ZkNativeHost.ZKFP_ERR_ALREADY_OPENED:
+                    return "ZKTeco: device already opened — reinitializing, please retry";
+                case ZkNativeHost.ZKFP_ERR_LOAD_IMAGE:
+                    return "ZKTeco: SDK failed to load fingerprint image — please retry";
+                case ZkNativeHost.ZKFP_ERR_ANALYZE_IMAGE:
+                    return "ZKTeco: SDK failed to analyze fingerprint image — please retry";
                 default:
                     return $"ZKTeco: capture failed ({ErrorCodeToString(errorCode)})";
             }

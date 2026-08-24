@@ -1,8 +1,4 @@
 using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
@@ -84,32 +80,6 @@ namespace FingerprintAgent.Adapters
         protected abstract int ImageHeight { get; }
 
         protected byte[] ToPngGrayscale(byte[] raw, int width, int height)
-        {
-            using (var bitmap = new Bitmap(width, height, PixelFormat.Format8bppIndexed))
-            {
-                ColorPalette palette = bitmap.Palette;
-                for (int i = 0; i < 256; i++)
-                    palette.Entries[i] = Color.FromArgb(i, i, i);
-                bitmap.Palette = palette;
-
-                var bitmapData = bitmap.LockBits(
-                    new Rectangle(0, 0, width, height),
-                    ImageLockMode.WriteOnly,
-                    PixelFormat.Format8bppIndexed);
-
-                int stride = bitmapData.Stride;
-                for (int y = 0; y < height; y++)
-                {
-                    Marshal.Copy(raw, y * width, bitmapData.Scan0 + y * stride, width);
-                }
-                bitmap.UnlockBits(bitmapData);
-
-                using (var ms = new MemoryStream())
-                {
-                    bitmap.Save(ms, ImageFormat.Png);
-                    return ms.ToArray();
-                }
-            }
-        }
+            => PngEncoder.ToPngGrayscale(raw, width, height);
     }
 }

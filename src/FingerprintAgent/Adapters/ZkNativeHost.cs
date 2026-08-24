@@ -43,7 +43,7 @@ namespace FingerprintAgent.Adapters
         [DllImport("libzkfp.dll")]
         private static extern int ZKFPM_AcquireFingerprint(
             IntPtr hDevice, IntPtr fpImage, uint cbFPImage,
-            IntPtr fpTemplate, ref int cbTemplate);
+            IntPtr fpTemplate, ref uint cbTemplate);
 
         /// <summary>
         /// Read parameter by code. Codes verified on ZK9500:
@@ -51,22 +51,41 @@ namespace FingerprintAgent.Adapters
         /// </summary>
         [DllImport("libzkfp.dll")]
         private static extern int ZKFPM_GetParameters(
-            IntPtr hDev, int nParamCode, byte[] paramValue, ref int cbParamValue);
+            IntPtr hDev, int nParamCode, byte[] paramValue, ref uint cbParamValue);
 
-        internal const int ZKFP_OK                = 0;
-        internal const int ZKFP_ALREADY_INIT      = 1;   // F5: host usable
-        internal const int ZKFP_ERR_INITLIB       = -1;
-        internal const int ZKFP_ERR_INIT          = -2;
-        internal const int ZKFP_ERR_NO_DEVICE     = -3;
-        internal const int ZKFP_ERR_NOT_SUPPORT   = -4;
+        internal const int ZKFP_OK = 0;
+        internal const int ZKFP_ALREADY_INIT = 1;   // F5: host usable
+        internal const int ZKFP_ERR_INITLIB = -1;
+        internal const int ZKFP_ERR_INIT = -2;
+        internal const int ZKFP_ERR_NO_DEVICE = -3;
+        internal const int ZKFP_ERR_NOT_SUPPORT = -4;
         internal const int ZKFP_ERR_INVALID_PARAM = -5;
-        internal const int ZKFP_ERR_OPEN          = -6;
-        internal const int ZKFP_ERR_INVALID_HANDLE= -7;
-        internal const int ZKFP_ERR_CAPTURE       = -8;
-        internal const int ZKFP_ERR_EXTRACT_FP    = -9;
-        internal const int ZKFP_ERR_ABORT         = -10;
-        internal const int ZKFP_ERR_MEMORY        = -11;
-        internal const int ZKFP_ERR_BUSY          = -12;
+        internal const int ZKFP_ERR_OPEN = -6;
+        internal const int ZKFP_ERR_INVALID_HANDLE = -7;
+        internal const int ZKFP_ERR_CAPTURE = -8;
+        internal const int ZKFP_ERR_EXTRACT_FP = -9;
+        internal const int ZKFP_ERR_ABORT = -10;
+        internal const int ZKFP_ERR_MEMORY = -11;
+        internal const int ZKFP_ERR_BUSY = -12;
+        internal const int ZKFP_ERR_ADD_FINGER = -13;
+        internal const int ZKFP_ERR_DELETE_FINGER = -14;
+        internal const int ZKFP_ERR_FAIL = -17;
+        internal const int ZKFP_ERR_CANCEL = -18;
+        internal const int ZKFP_ERR_VERIFY = -20;
+        internal const int ZKFP_ERR_MERGE = -22;
+        internal const int ZKFP_ERR_NOT_OPENED = -23;
+        internal const int ZKFP_ERR_NOT_INIT = -24;
+        internal const int ZKFP_ERR_ALREADY_OPENED = -25;
+        internal const int ZKFP_ERR_LOAD_IMAGE = -26;
+        internal const int ZKFP_ERR_ANALYZE_IMAGE = -27;
+        internal const int ZKFP_ERR_TIMEOUT = -28;
+
+        // SDK parameter codes (empirically verified on ZK9500 / ZK SDK 5.3; see tests/.../ZkSdkProbe.cs)
+        internal const int PARAM_WIDTH = 1;     // Image width in pixels
+        internal const int PARAM_HEIGHT = 2;     // Image height in pixels
+        internal const int PARAM_DPI = 3;     // Sensor DPI
+        internal const int PARAM_PRODUCT_NAME = 1102;  // Product name (UTF-8 string)
+        internal const int PARAM_SERIAL_NUMBER = 1103;  // Serial number (UTF-8 string)
 
         internal static int Initialize() => ZKFPM_Init();
         internal static int Close() => ZKFPM_Terminate();      // double-call benign
@@ -75,7 +94,7 @@ namespace FingerprintAgent.Adapters
 
         internal static int AcquireFingerprint(
             IntPtr hDevice, IntPtr imagePtr, uint cbImage,
-            IntPtr templatePtr, ref int cbTemplate)
+            IntPtr templatePtr, ref uint cbTemplate)
             => ZKFPM_AcquireFingerprint(hDevice, imagePtr, cbImage, templatePtr, ref cbTemplate);
 
         /// <summary>
@@ -112,16 +131,16 @@ namespace FingerprintAgent.Adapters
                 // (verified on ZK9500 via ZkSdkProbe.cs:98-110)
                 byte[] buf4 = new byte[4];
 
-                int sz = buf4.Length;
-                if (ZKFPM_GetParameters(handle, 1, buf4, ref sz) == 0 && sz >= 4)
+                uint sz = (uint)buf4.Length;
+                if (ZKFPM_GetParameters(handle, PARAM_WIDTH, buf4, ref sz) == 0 && sz >= 4)
                     width = BitConverter.ToInt32(buf4, 0);
 
-                sz = buf4.Length;
-                if (ZKFPM_GetParameters(handle, 2, buf4, ref sz) == 0 && sz >= 4)
+                sz = (uint)buf4.Length;
+                if (ZKFPM_GetParameters(handle, PARAM_HEIGHT, buf4, ref sz) == 0 && sz >= 4)
                     height = BitConverter.ToInt32(buf4, 0);
 
-                sz = buf4.Length;
-                if (ZKFPM_GetParameters(handle, 3, buf4, ref sz) == 0 && sz >= 4)
+                sz = (uint)buf4.Length;
+                if (ZKFPM_GetParameters(handle, PARAM_DPI, buf4, ref sz) == 0 && sz >= 4)
                     dpi = BitConverter.ToInt32(buf4, 0);
 
                 if (width <= 0 || height <= 0)
@@ -133,14 +152,14 @@ namespace FingerprintAgent.Adapters
 
                 // Step 3: Serial (1103) + product name (1102) — fail-open
                 byte[] buf64 = new byte[64];
-                sz = buf64.Length;
-                if (ZKFPM_GetParameters(handle, 1103, buf64, ref sz) == 0 && sz > 0)
-                    serialNumber = Encoding.UTF8.GetString(buf64, 0, sz)
+                sz = (uint)buf64.Length;
+                if (ZKFPM_GetParameters(handle, PARAM_SERIAL_NUMBER, buf64, ref sz) == 0 && (int)sz > 0)
+                    serialNumber = Encoding.UTF8.GetString(buf64, 0, (int)sz)
                         .TrimEnd('\0').Replace("\0", "");
 
-                sz = buf64.Length;
-                if (ZKFPM_GetParameters(handle, 1102, buf64, ref sz) == 0 && sz > 0)
-                    productName = Encoding.UTF8.GetString(buf64, 0, sz)
+                sz = (uint)buf64.Length;
+                if (ZKFPM_GetParameters(handle, PARAM_PRODUCT_NAME, buf64, ref sz) == 0 && (int)sz > 0)
+                    productName = Encoding.UTF8.GetString(buf64, 0, (int)sz)
                         .TrimEnd('\0').Replace("\0", "");
 
                 return true;
