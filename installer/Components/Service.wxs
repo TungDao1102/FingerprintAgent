@@ -94,7 +94,6 @@
                         Description="Local fingerprint capture service providing HTTP API for web applications"
                         Type="ownProcess"
                         Start="auto"
-                        DelayedAutoStart="yes"
                         Account="LocalSystem"
                         ErrorControl="normal"
                         Vital="yes"
@@ -107,13 +106,27 @@
               ResetPeriodInDays="1" />
         </ServiceInstall>
 
-        <!-- D-30: graceful 30s stop on upgrade -->
+        <!--
+          D-32a: DelayedAutoStart. WiX 3.x <ServiceInstall> does NOT expose a
+          DelayedAutoStart attribute (it was added in WiX 4.x). The Windows-native
+          mechanism is a DWORD at
+          HKLM\SYSTEM\CurrentControlSet\Services\<Name>\DelayedAutoStart = 1.
+          Set it here so the service auto-starts ~2 minutes after boot instead of
+          blocking boot on workstations that are slow to initialize the scanner SDK.
+        -->
+        <RegistryKey Root="HKLM"
+                     Key="SYSTEM\CurrentControlSet\Services\FingerprintAgent">
+          <RegistryValue Name="DelayedAutoStart" Type="integer" Value="1" />
+        </RegistryKey>
+
+        <!-- D-30: graceful 30s stop on upgrade. WiX 3.x <ServiceControl> only exposes
+             Wait="yes|no"; the OS-level service stop timeout (default 30s) is what
+             actually limits the wait, so Timeout is unsupported and was removed. -->
         <ServiceControl Id="svc_FingerprintAgent_Control"
                         Name="FingerprintAgent"
                         Start="install"
                         Stop="both"
                         Wait="yes"
-                        Timeout="30"
                         Remove="uninstall" />
       </Component>
 

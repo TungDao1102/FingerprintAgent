@@ -26,14 +26,20 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
 
   <Fragment>
-    <DirectoryRef Id="INSTALLFOLDER">
-      <ComponentGroup Id="ProductComponents">
-        <ComponentRef Id="cmp_Binaries" />
-        <ComponentRef Id="cmp_Service" />
-        <ComponentRef Id="EventLogSource" />
-        <ComponentGroupRef Id="UninstallBehaviorComponents" />
-      </ComponentGroup>
-    </DirectoryRef>
+    <!--
+      WiX 3.x schema: <ComponentGroup> cannot live inside <DirectoryRef>; only
+      <Component>, <Merge>, and <Directory> are allowed there. ComponentGroups are
+      top-level within a Fragment and reference Components by Id without re-binding
+      to a directory. The actual <Component> definitions (cmp_Binaries, cmp_Service)
+      live in Components\Service.wxs under a DirectoryRef pointing at INSTALLFOLDER
+      (which is itself declared in FingerprintAgent.Installer.wxs).
+    -->
+    <ComponentGroup Id="ProductComponents">
+      <ComponentRef Id="cmp_Binaries" />
+      <ComponentRef Id="cmp_Service" />
+      <ComponentRef Id="EventLogSource" />
+      <ComponentGroupRef Id="UninstallBehaviorComponents" />
+    </ComponentGroup>
   </Fragment>
 
 </Wix>

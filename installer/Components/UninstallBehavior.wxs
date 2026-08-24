@@ -38,9 +38,15 @@
     -->
     <Component Id="cmp_RemoveLogsOnUninstall"
                Guid="{A5B6C7D8-9E0F-1A2B-3C4D-5E6F7A8B9C0D}"
-               Win64="no">
-      <util:RemoveFolderEx Property="REMOVE_LOGS"
-                           Directory="LOGS_DIR_PLACEHOLDER" />
+               Win64="no"
+               Directory="LOGS_DIR_PLACEHOLDER">
+      <!--
+        WiX 3.x util:RemoveFolderEx has no Directory attribute; the target directory
+        is inferred from the parent Component's Directory attribute (added above).
+        Property="REMOVE_LOGS" makes the removal a no-op unless the operator passed
+        REMOVE_LOGS=1 on the msiexec command line.
+      -->
+      <util:RemoveFolderEx Property="REMOVE_LOGS" />
     </Component>
 
     <ComponentGroup Id="UninstallBehaviorComponents">

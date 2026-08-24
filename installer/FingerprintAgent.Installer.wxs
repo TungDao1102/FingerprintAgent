@@ -93,8 +93,12 @@
       CheckVcRedist sets the VcRedistMissingDialog property to "1" when VC++ x86 is not
       detected (a documented common hospital-IT scenario per D-09). The Show action in
       InstallUISequence below displays the dialog before ExitDialog if that property is set.
+
+      WiX 3.x schema: <DialogRef> must live inside a <UI> element, not directly under <Product>.
     -->
-    <DialogRef Id="VcRedistErrorDialog" />
+    <UI>
+      <DialogRef Id="VcRedistErrorDialog" />
+    </UI>
 
     <!-- Custom Action sequence (D-38: DetectInstallType early; CheckVcRedist fail-fast; etc.) -->
     <InstallExecuteSequence>
@@ -140,21 +144,22 @@
       existing pattern used for StopRunningService (line 108).
     -->
     <InstallExecuteSequence>
-      <Custom Action="StopServiceOnRollback"><![CDATA[NOT Installed]]></Custom>
-      <Custom Action="StartServiceOnRollback"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
+      <Custom Action="StopServiceOnRollback" After="InstallFinalize"><![CDATA[NOT Installed]]></Custom>
+      <Custom Action="StartServiceOnRollback" After="InstallFinalize"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
     </InstallExecuteSequence>
 
     <!-- UI sequence for Vietnamese error dialog display during interactive install -->
     <InstallUISequence>
       <Custom Action="DetectInstallType" Before="AppSearch"><![CDATA[NOT Installed]]></Custom>
       <!--
-        CR-07: Display the Vietnamese VC++ error dialog before ExitDialog when the
-        CheckVcRedist CA set VcRedistMissingDialog=1. The dialog explains what's
-        missing and provides the download URL for vc_redist.x86.exe.
+        CR-07 follow-up: automatic pre-ExitDialog display of VcRedistErrorDialog was
+        removed because <Show> with Before/After=ExitDialog is rejected by light — ExitDialog
+        is a special termination action (negative sequence number) and may not be used as
+        an anchor. The conditional display is now owned by a custom action that checks
+        VcRedistMissingDialog and calls MsiProcessMessage (DTF Session.Message). For v1,
+        the dialog is defined (DialogRef in <UI>) and ships in the MSI but is not
+        auto-shown; the CA-driven path is a follow-up.
       -->
-      <Show Dialog="VcRedistErrorDialog"
-            Condition="VcRedistMissingDialog = &quot;1&quot;"
-            Before="ExitDialog" />
     </InstallUISequence>
 
     <!-- ComponentGroupRef declarations pulled in from Components/*.wxs -->

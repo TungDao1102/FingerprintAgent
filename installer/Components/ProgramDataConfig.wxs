@@ -46,7 +46,7 @@
         <CreateFolder Directory="LOGS_DIR_PLACEHOLDER">
           <util:PermissionEx User="SYSTEM" GenericAll="yes" />
           <util:PermissionEx User="Administrators" GenericAll="yes" />
-          <util:PermissionEx User="Users" GenericRead="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" Read="yes" />
         </CreateFolder>
       </Component>
 
@@ -60,11 +60,24 @@
     <!--
       EventLog source — declared as a top-level Component (not nested under INSTALLFOLDER).
       Created during install via util:EventSource, removed on uninstall via RemoveOnUninstall.
+
+      WiX 3.x util:EventSource schema (verified against C:\wix314\doc\util.xsd line 216):
+        - Log               (required)  - event log name (Application, System, Security, ...)
+        - Name              (required)  - source name registered in the registry
+        - EventMessageFile  (required)  - DLL/EXE containing the message table
+        - CategoryMessageFile + CategoryCount  (optional, for categorized events)
+        - ParameterMessageFile  (optional)
+        - KeyPath           (optional)
+        - SupportsErrors / Informationals / Warnings / FailureAudits / SuccessAudits (optional)
+
+      <Component> needs a Directory attribute when it lives at Fragment top level
+      (no DirectoryRef wrapper). INSTALLFOLDER is the canonical owner — the source
+      DLL is there and Windows associates the EventLog source with the file.
     -->
-    <Component Id="EventLogSource" Guid="{F4A5B6C7-8D9E-0F1A-2B3C-4D5E6F7A8B9C}" Win64="no">
+    <Component Id="EventLogSource" Guid="{F4A5B6C7-8D9E-0F1A-2B3C-4D5E6F7A8B9C}" Win64="no" Directory="INSTALLFOLDER">
       <util:EventSource Name="FingerprintAgent"
-                        EventLogFile="Application"
-                        CategoryMessageFile="[INSTALLFOLDER]FingerprintAgent.exe"
+                        Log="Application"
+                        EventMessageFile="[INSTALLFOLDER]FingerprintAgent.exe"
                         SupportsErrors="yes"
                         SupportsInformationals="yes"
                         SupportsWarnings="yes" />
