@@ -46,6 +46,9 @@ namespace FingerprintAgent.Tests.Api
                 catch (HttpListenerException) when (_disposed)
                 {
                 }
+                catch (ObjectDisposedException) when (_disposed)
+                {
+                }
             });
             _serverThread.IsBackground = true;
             _serverThread.Start();
@@ -60,8 +63,12 @@ namespace FingerprintAgent.Tests.Api
             _contextReady.Set();
             try { _listener.Stop(); } catch { }
             try { _listener.Close(); } catch { }
+            // Wait for the server thread to exit BEFORE disposing the ManualResetEventSlim.
+            // Otherwise the thread may still be inside _contextReady.Wait(...) when Dispose()
+            // is called and throw ObjectDisposedException, which escapes as an unhandled
+            // background-thread exception and crashes the test runner.
+            try { _serverThread.Join(2000); } catch { }
             _contextReady.Dispose();
-            _serverThread.Join(2000);
         }
 
         private void ResetContextReady()
