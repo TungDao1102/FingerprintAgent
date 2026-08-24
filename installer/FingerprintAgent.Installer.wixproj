@@ -93,6 +93,14 @@
       -->
       <HostTargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Host\bin\$(Configuration)\net48'))</HostTargetDir>
       <InstallerCATargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Installer\bin\$(Configuration)'))</InstallerCATargetDir>
+      <!--
+        CNDL0117 fix: WiX's CLI parser treats a trailing \" inside a quoted path as an escape
+        sequence, so the closing quote does not terminate the argument and candle keeps reading
+        the source-file list as part of the output path. Strip the trailing slash from
+        $(OutputPath) for the -o argument only; $(OutputPath) still needs its trailing slash
+        for the WixObject item expansion on the line below.
+      -->
+      <CandleOutputDir>bin\$(Configuration)</CandleOutputDir>
     </PropertyGroup>
     <ItemGroup>
       <WixSource Include="@(Compile)" />
@@ -106,7 +114,7 @@
       DefineConstants is now a single "Version=$(Version)" string; we pass it via -d
       so MSBuild's property flows through unchanged.
     -->
-    <Exec Command="&quot;$(CandlePath)&quot; -ext WixUIExtension -ext WixUtilExtension -dVersion=$(Version) -dFingerprintAgent.Host.TargetDir=&quot;$(HostTargetDir)&quot; -dFingerprintAgent.Installer.TargetDir=&quot;$(InstallerCATargetDir)&quot; -o &quot;$(OutputPath)&quot; @(Compile, ' ')" />
+    <Exec Command="&quot;$(CandlePath)&quot; -ext WixUIExtension -ext WixUtilExtension -dVersion=$(Version) -dFingerprintAgent.Host.TargetDir=&quot;$(HostTargetDir)&quot; -dFingerprintAgent.Installer.TargetDir=&quot;$(InstallerCATargetDir)&quot; -o &quot;$(CandleOutputDir)&quot; @(Compile, ' ')" />
     <Exec Command="&quot;$(LightPath)&quot; -ext WixUIExtension -ext WixUtilExtension -cultures:en-US -loc &quot;Dialogs\WixUI_Minimal.vi-VN.wxl&quot; -out &quot;$(OutputPath)$(OutputName).msi&quot; @(WixObject, ' ')" />
   </Target>
 </Project>
