@@ -91,16 +91,21 @@
         derive them from the solution's fixed layout (dotnet build FingerprintAgent.sln runs
         first in CI and locally) and feed them to candle explicitly.
       -->
-      <HostTargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Host\bin\$(Configuration)\net48'))</HostTargetDir>
-      <InstallerCATargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Installer\bin\$(Configuration)'))</InstallerCATargetDir>
+      <HostTargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Host\bin\$(Configuration)\net48'))\</HostTargetDir>
+      <InstallerCATargetDir>$([MSBuild]::EnsureTrailingSlash('$(MSBuildProjectDirectory)\..\src\FingerprintAgent.Installer\bin\$(Configuration)'))\</InstallerCATargetDir>
       <!--
-        CNDL0117 fix: WiX's CLI parser treats a trailing \" inside a quoted path as an escape
-        sequence, so the closing quote does not terminate the argument and candle keeps reading
-        the source-file list as part of the output path. Strip the trailing slash from
-        $(OutputPath) for the -o argument only; $(OutputPath) still needs its trailing slash
-        for the WixObject item expansion on the line below.
+        CNDL0117 + CNDL0001 fix: WiX's CLI parser treats a trailing backslash before the
+        closing quote as an escape character, so "-o \"bin\Release\"" reads as
+        path="bin\Release" with the closing quote consumed and candle keeps consuming
+        the source-file list as part of the path (CNDL0117). Stripping the trailing slash
+        breaks the opposite way: without it, candle interprets the value as a single
+        output file and rejects multiple source files (CNDL0001).
+
+        WiX's own CNDL0117 message recommends the escape form: "C:\Out Directory\\".
+        candle's parser unescapes \\ to a single \, leaving the path with a real trailing
+        backslash that signals output-directory mode.
       -->
-      <CandleOutputDir>bin\$(Configuration)</CandleOutputDir>
+      <CandleOutputDir>bin\$(Configuration)\\</CandleOutputDir>
     </PropertyGroup>
     <ItemGroup>
       <WixSource Include="@(Compile)" />
@@ -115,6 +120,6 @@
       so MSBuild's property flows through unchanged.
     -->
     <Exec Command="&quot;$(CandlePath)&quot; -ext WixUIExtension -ext WixUtilExtension -dVersion=$(Version) -dFingerprintAgent.Host.TargetDir=&quot;$(HostTargetDir)&quot; -dFingerprintAgent.Installer.TargetDir=&quot;$(InstallerCATargetDir)&quot; -o &quot;$(CandleOutputDir)&quot; @(Compile, ' ')" />
-    <Exec Command="&quot;$(LightPath)&quot; -ext WixUIExtension -ext WixUtilExtension -cultures:en-US -loc &quot;Dialogs\WixUI_Minimal.vi-VN.wxl&quot; -out &quot;$(OutputPath)$(OutputName).msi&quot; @(WixObject, ' ')" />
+    <Exec Command="&quot;$(LightPath)&quot; -ext WixUIExtension -ext WixUtilExtension -loc &quot;Dialogs\WixUI_Minimal.vi-VN.wxl&quot; -out &quot;$(OutputPath)$(OutputName).msi&quot; @(WixObject, ' ')" />
   </Target>
 </Project>

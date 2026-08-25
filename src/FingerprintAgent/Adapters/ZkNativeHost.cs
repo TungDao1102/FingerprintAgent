@@ -29,7 +29,7 @@ namespace FingerprintAgent.Adapters
 
         /// <summary>
         /// Returns raw int handle. Positive = valid; zero OR NEGATIVE = fail.
-        /// CRITICAL GUARD: check &gt; 0, not just != 0 — ZkSdkProbe.cs:64-75 observed
+        /// CRITICAL GUARD: check > 0, not just != 0 — ZkSdkProbe.cs:64-75 observed
         /// negative handles when device held by another process. A negative value
         /// passed to AcquireFingerprint = undefined behavior.
         /// </summary>
@@ -101,7 +101,7 @@ namespace FingerprintAgent.Adapters
         /// Opens device at index, reads dims/dpi/serial/product.
         /// Returns false if any critical step fails.
         ///
-        /// GUARD: rawHandle &gt; 0 (negative handles observed on ZK9500).
+        /// GUARD: rawHandle > 0 (negative handles observed on ZK9500).
         /// W5-leak fix: CloseDevice on ANY intermediate failure before return false.
         /// Fail-open for serial/product: keep defaults if param 1103/1102 read fails.
         /// </summary>
