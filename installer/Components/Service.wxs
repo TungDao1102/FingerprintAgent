@@ -78,16 +78,17 @@
               Source="$(var.FingerprintAgent.Host.TargetDir)System.ValueTuple.dll" />
         <File Id="fil_ConfigTemplate"
               Source="$(var.FingerprintAgent.Host.TargetDir)config.template.json" />
-      </Component>
-      <!-- Service registration via WiX (D-19) -->
-      <Component Id="cmp_Service" Guid="{C1D2E3F4-5A6B-7C8D-9E0F-1A2B3C4D5E6F}" Win64="no">
-        <CreateFolder />
-        <!--
-          Important finding: util:EventSource registration moved to EventLogSource
-          Component in ProgramDataConfig.wxs (the canonical location). Removing the
-          duplicate here prevents two registry entries for the same EventLog source.
-        -->
 
+        <!--
+          D-19: Service registration. MUST live in the same Component as the service
+          executable and that exe MUST be the component KeyPath — MSI resolves the
+          ServiceInstall ImagePath from the component KeyPath (WiX ServiceInstall docs:
+          "The service executable installed will point to the KeyPath for the Component").
+          A previous revision put this in a separate file-less Component whose keypath was
+          a RegistryValue; msiexec then silently skipped creating the service (no
+          ServiceInstall op in the execute script), StartServices failed with 1920, and
+          util:ServiceConfig's ExecServiceConfig failed with 0x80070424.
+        -->
         <ServiceInstall Id="svc_FingerprintAgent"
                         Name="FingerprintAgent"
                         DisplayName="Fingerprint Agent"
@@ -98,15 +99,26 @@
                         ErrorControl="normal"
                         Vital="yes"
                         Arguments="--service">
+          <!--
+            util:ServiceConfig DISABLED (2026-08-25): its deferred ExecServiceConfig CA ran
+            before the service existed on Win11 24H2 / Server 2025 (0x80070424 -> 1603).
+            Recovery actions are a follow-up; if re-enabled, verify ordering on 26100+ first.
+          -->
+          <!--
           <util:ServiceConfig
               FirstFailureActionType="restart"
               SecondFailureActionType="restart"
               ThirdFailureActionType="restart"
               RestartServiceDelayInSeconds="5"
               ResetPeriodInDays="1" />
+          -->
         </ServiceInstall>
 
         <!--
+          Important finding: util:EventSource registration moved to EventLogSource
+          Component in ProgramDataConfig.wxs (the canonical location). Removing the
+          duplicate here prevents two registry entries for the same EventLog source.
+
           D-32a: DelayedAutoStart. WiX 3.x <ServiceInstall> does NOT expose a
           DelayedAutoStart attribute (it was added in WiX 4.x). The Windows-native
           mechanism is a DWORD at
@@ -119,7 +131,7 @@
           <RegistryValue Name="DelayedAutoStart" Type="integer" Value="1" />
         </RegistryKey>
 
-        <!-- D-30: graceful 30s stop on upgrade. WiX 3.x <ServiceControl> only exposes
+        <!-- D-30: graceful stop on upgrade/uninstall. WiX 3.x <ServiceControl> only exposes
              Wait="yes|no"; the OS-level service stop timeout (default 30s) is what
              actually limits the wait, so Timeout is unsupported and was removed. -->
         <ServiceControl Id="svc_FingerprintAgent_Control"

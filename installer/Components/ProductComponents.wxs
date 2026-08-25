@@ -15,8 +15,7 @@
 
   SCOPE
     ProductComponents contains:
-      - cmp_Binaries           (binaries + config.template.json) — INSTALLFOLDER
-      - cmp_Service            (service registration)            — INSTALLFOLDER
+      - cmp_Binaries           (binaries + config.template.json + service install/control) — INSTALLFOLDER
       - EventLogSource         (EventLog source registration)    — INSTALLFOLDER-adjacent
       - UninstallBehaviorComponents (conditional log cleanup on REMOVE_LOGS=1)
 
@@ -36,7 +35,6 @@
     -->
     <ComponentGroup Id="ProductComponents">
       <ComponentRef Id="cmp_Binaries" />
-      <ComponentRef Id="cmp_Service" />
       <ComponentRef Id="EventLogSource" />
       <ComponentGroupRef Id="UninstallBehaviorComponents" />
     </ComponentGroup>
