@@ -78,8 +78,13 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Installing MSI silently..."
+          # msiexec rejects forward slashes and relative paths in the package path
+          # (internal error 1324 -> msiexec exit 1619 "package could not be opened"),
+          # so resolve to an absolute backslash path before invoking it.
+          $msi = (Resolve-Path $env:MSI_PATH).Path
+          Write-Host "MSI: $msi"
           $proc = Start-Process -FilePath 'msiexec.exe' `
-            -ArgumentList "/i `"$env:MSI_PATH`" /qn /l*v install.log" `
+            -ArgumentList "/i `"$msi`" /qn /l*v install.log" `
             -Wait -PassThru -NoNewWindow
           Write-Host "msiexec exit code: $($proc.ExitCode)"
           if ($proc.ExitCode -ne 0) {
@@ -169,9 +174,11 @@ jobs:
         if: always()
         shell: pwsh
         run: |
-          Write-Host "Uninstalling MSI from $env:MSI_PATH ..."
+          # Same msiexec path restriction as the install step: absolute + backslashes.
+          $msi = (Resolve-Path $env:MSI_PATH).Path
+          Write-Host "Uninstalling MSI from $msi ..."
           $proc = Start-Process -FilePath 'msiexec.exe' `
-            -ArgumentList "/x `"$env:MSI_PATH`" /qn /l*v uninstall.log" `
+            -ArgumentList "/x `"$msi`" /qn /l*v uninstall.log" `
             -Wait -PassThru -NoNewWindow
           Write-Host "msiexec uninstall exit code: $($proc.ExitCode)"
           if ($proc.ExitCode -ne 0) {
