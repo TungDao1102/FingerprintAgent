@@ -47,6 +47,13 @@
         REMOVE_LOGS=1 on the msiexec command line.
       -->
       <util:RemoveFolderEx Property="REMOVE_LOGS" />
+      <!--
+        The component has no File/Registry child, so MSI keys it to its directory
+        (LOGS_DIR_PLACEHOLDER). ICE18 requires that Directory/Component pair in
+        CreateFolders; <CreateFolder/> emits exactly that row (folder already
+        exists from cmp_LogsDir, creation is reference-counted and harmless).
+      -->
+      <CreateFolder />
     </Component>
 
     <ComponentGroup Id="UninstallBehaviorComponents">

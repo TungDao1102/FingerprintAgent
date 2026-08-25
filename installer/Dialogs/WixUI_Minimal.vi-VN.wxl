@@ -12,14 +12,21 @@
     - WixUIFinished (Finish dialog heading)
     - VcRedistErrorTitle + VcRedistErrorBody (custom dialog)
 -->
-<WixLocalization Culture="vi-VN" xmlns="http://schemas.microsoft.com/wix/2006/localization">
-  <String Id="WelcomeDlgTitle">{\WixUI_Minimal_Title}Chào mừng đến với Trình cài đặt Fingerprint Agent</String>
+<!--
+  Codepage="65001" (UTF-8) is REQUIRED for this database: Windows-1258 has no
+  single-byte (precomposed) form for many Vietnamese vowels used here
+  (ế ề ệ ộ ứ ữ ậ ố …), so light rejects every such string with LGHT0311.
+  With -loc, the WixLocalization codepage wins over Product/@Codepage, so it
+  must be set here (and mirrored on Product).
+-->
+<WixLocalization Culture="vi-VN" Codepage="65001" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+  <String Id="WelcomeDlgTitle">{\WixUI_Font_Title}Chào mừng đến với Trình cài đặt Fingerprint Agent</String>
   <String Id="WelcomeDlgDescription">Trình cài đặt này sẽ cài đặt dịch vụ FingerprintAgent lên máy tính của bạn.[BR][BR]Dịch vụ này cung cấp API HTTP cục bộ (localhost:5043) để các ứng dụng web HIS có thể yêu cầu quét vân tay từ máy quét USB.[BR][BR]Nhấn Tiếp tục để bắt đầu.</String>
-  <String Id="InstallDlgTitle">{\WixUI_Minimal_Title}Đang cài đặt Fingerprint Agent</String>
-  <String Id="InstallScopeDlgTitle">{\WixUI_Minimal_Title}Phạm vi cài đặt</String>
+  <String Id="InstallDlgTitle">{\WixUI_Font_Title}Đang cài đặt Fingerprint Agent</String>
+  <String Id="InstallScopeDlgTitle">{\WixUI_Font_Title}Phạm vi cài đặt</String>
   <String Id="ProgressDlgTitle">Đang cài đặt Fingerprint Agent</String>
   <String Id="ProgressDlgTextInstalling">Đang cài đặt dịch vụ FingerprintAgent...</String>
-  <String Id="FinishedDlgTitle">{\WixUI_Minimal_Title}Cài đặt hoàn tất</String>
+  <String Id="FinishedDlgTitle">{\WixUI_Font_Title}Cài đặt hoàn tất</String>
   <String Id="FinishedDlgMessage">Cài đặt FingerprintAgent đã hoàn tất.[BR][BR]Dịch vụ đã được khởi động và sẵn sàng nhận yêu cầu từ ứng dụng web.[BR][BR]Nhấn Đóng để thoát.</String>
   <String Id="WixUIOk">Đồng ý</String>
   <String Id="WixUICancel">Hủy</String>

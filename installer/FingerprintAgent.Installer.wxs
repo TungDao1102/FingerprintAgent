@@ -39,7 +39,7 @@
            Manufacturer="FingerprintAgent"
            UpgradeCode="$(var.UpgradeCode)"
            Language="1033"
-           Codepage="1252">
+           Codepage="65001">
 
     <Package Id="*"
              Description="Fingerprint Agent installer (HIS-compatible local capture service)"
@@ -86,7 +86,13 @@
 
     <!-- D-08: minimal UI supporting msiexec /qn silent install -->
     <UIRef Id="WixUI_Minimal" />
-    <WixVariable Id="WixUILicenseRtf" Value="" />
+    <!--
+      WixUI_Minimal's LicenseAgreementDlg requires a license file. An empty Value
+      makes light.exe fail with LGHT0001 ("Value cannot be null. Parameter name:
+      source") when binding the WixVariable as a file source — point it at the
+      bundled Vietnamese AS-IS notice instead.
+    -->
+    <WixVariable Id="WixUILicenseRtf" Value="Dialogs\License.rtf" />
 
     <!--
       CR-07: Reference the Vietnamese VC++ error dialog so it ships in the MSI binary.
@@ -142,10 +148,15 @@
       so the conditions always evaluated false and the CAs never fired. Replaced
       with standard MSI property checks (`Installed` / `REINSTALL`) which match the
       existing pattern used for StopRunningService (line 108).
+
+      ICE77: in-script custom actions (Execute="rollback") MUST be sequenced between
+      InstallInitialize and InstallFinalize; After="InstallFinalize" made light fail
+      with LGHT0204/ICE77. Anchored after InstallFiles instead — still inside the
+      script, covering failures from service install/start through finalize.
     -->
     <InstallExecuteSequence>
-      <Custom Action="StopServiceOnRollback" After="InstallFinalize"><![CDATA[NOT Installed]]></Custom>
-      <Custom Action="StartServiceOnRollback" After="InstallFinalize"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
+      <Custom Action="StopServiceOnRollback" After="InstallFiles"><![CDATA[NOT Installed]]></Custom>
+      <Custom Action="StartServiceOnRollback" After="StopServiceOnRollback"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
     </InstallExecuteSequence>
 
     <!-- UI sequence for Vietnamese error dialog display during interactive install -->

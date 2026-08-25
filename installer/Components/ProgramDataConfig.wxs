@@ -41,9 +41,19 @@
         We declare a Component for the dir with Permanent=yes so uninstall leaves it alone.
 
         WARN-09: same restricted ACL as the parent ProgramData directory.
+
+        ICE18/CNDL0062 note: the component is scoped via its own DirectoryRef to
+        LOGS_DIR_PLACEHOLDER so its implicit directory KeyPath matches the
+        CreateFolders row emitted by <CreateFolder>. Setting Component/@Directory
+        instead would violate CNDL0062 (forbidden under a DirectoryRef), while
+        leaving it under the PROGRAMDATAFOLDER ref pointed the KeyPath at
+        PROGRAMDATAFOLDER with no matching CreateFolders row.
       -->
+    </DirectoryRef>
+
+    <DirectoryRef Id="LOGS_DIR_PLACEHOLDER">
       <Component Id="cmp_LogsDir" Guid="{E3F4A5B6-7C8D-9E0F-1A2B-3C4D5E6F7A8B}" Win64="no" Permanent="yes">
-        <CreateFolder Directory="LOGS_DIR_PLACEHOLDER">
+        <CreateFolder>
           <util:PermissionEx User="SYSTEM" GenericAll="yes" />
           <util:PermissionEx User="Administrators" GenericAll="yes" />
           <util:PermissionEx User="Users" GenericRead="yes" Read="yes" />
@@ -81,6 +91,14 @@
                         SupportsErrors="yes"
                         SupportsInformationals="yes"
                         SupportsWarnings="yes" />
+      <!--
+        Registry-only component (util:EventSource writes registry values at
+        install time) has no File/Registry KeyPath, so MSI keys it to its
+        directory (INSTALLFOLDER). ICE18 requires the matching CreateFolders
+        row; <CreateFolder/> emits it. INSTALLFOLDER already exists from
+        ProductComponents — creation is reference-counted and harmless.
+      -->
+      <CreateFolder />
     </Component>
 
   </Fragment>
