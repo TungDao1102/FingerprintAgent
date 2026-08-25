@@ -74,6 +74,27 @@ jobs:
 
       # Install the MSI silently. WiX /qn mode skips all UI (D-08).
       # /l*v install.log gives a verbose log we can inspect on failure.
+      # CheckVcRedist custom action hard-fails the install when the VC++ x86
+      # runtime is absent (D-09 — deliberate for hospital workstations). Clean
+      # runners don't guarantee it, so make the condition true beforehand.
+      # Same registry probe as CustomActions.IsVcRedistInstalled.
+      - name: Ensure VC++ x86 redistributable
+        shell: pwsh
+        run: |
+          $keys = @(
+            'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86'
+          )
+          foreach ($key in $keys) {
+            $v = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).Installed
+            if ($v -eq 1) { Write-Host "VC++ x86 already present at $key"; exit 0 }
+          }
+          Write-Host 'VC++ x86 not found - installing silently...'
+          Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x86.exe' -OutFile "$env:TEMP\vc_redist.x86.exe"
+          $p = Start-Process -FilePath "$env:TEMP\vc_redist.x86.exe" -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
+          Write-Host "vc_redist.x86 exit code: $($p.ExitCode)"
+          exit $p.ExitCode
+
       - name: Install MSI (silent)
         shell: pwsh
         run: |
@@ -88,6 +109,12 @@ jobs:
             -Wait -PassThru -NoNewWindow
           Write-Host "msiexec exit code: $($proc.ExitCode)"
           if ($proc.ExitCode -ne 0) {
+            # Dump the tail of the verbose log inline so the failure reason is
+            # visible in the job summary without downloading artifacts.
+            if (Test-Path install.log) {
+              Write-Host "--- Last 80 lines of install.log ---"
+              Get-Content install.log -Tail 80 | ForEach-Object { Write-Host $_ }
+            }
             Write-Error "MSI install failed (exit code $($proc.ExitCode)). See install.log."
             exit $proc.ExitCode
           }
