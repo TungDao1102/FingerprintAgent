@@ -56,6 +56,9 @@ jobs:
       - name: Install WiX 3.14.1 toolchain
         uses: ./.github/actions/install-wix314
 
+      # '0.0.0-e2e' marks this as an ephemeral CI build. MSI ProductVersion only
+      # accepts numeric x.x.x — the .wixproj strips the '-e2e' prerelease suffix
+      # (candle CNDL0108) before invoking candle.exe.
       - name: Build MSI
         run: dotnet build installer/FingerprintAgent.Installer.wixproj -c Release --no-restore /p:WixToolPath=C:\wix314 /p:Version=0.0.0-e2e
 
