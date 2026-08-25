@@ -38,7 +38,7 @@
            Version="$(var.Version)"
            Manufacturer="FingerprintAgent"
            UpgradeCode="$(var.UpgradeCode)"
-           Language="1033"
+           Language="1066"
            Codepage="65001">
 
     <Package Id="*"
@@ -69,8 +69,8 @@
     <Property Id="REMOVE_LOGS" Secure="yes" />
 
     <!-- D-18: Programs and Features links -->
-    <Property Id="ARPHELPLINK" Value="https://github.com/YOUR-ORG/FingerprintAgent" />
-    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/YOUR-ORG/FingerprintAgent/releases" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/TungDao1102/FingerprintAgent" />
+    <Property Id="ARPURLUPDATEINFO" Value="https://github.com/TungDao1102/FingerprintAgent/releases" />
     <!-- Hide Repair verb for v1 (Phase 5+ can re-enable if needed) -->
     <Property Id="ARPNOREPAIR" Value="1" />
 
@@ -125,39 +125,27 @@
 
       <!-- 6. StartServices (WiX standard action — handled by ServiceControl Start attribute) -->
 
-      <!-- 7. ProbeHealthAfterInstall — C5: after InstallFinalize so the service is truly up -->
+      <!-- 7. ProbeHealthAfterInstall — C5: after InstallFinalize so the service is truly up.
+           IMMEDIATE CA, so it MAY legally sit after InstallFinalize (ICE77 only restricts
+           in-script actions). Failure surfaces after the transaction committed. -->
       <Custom Action="ProbeHealthAfterInstall" After="InstallFinalize"><![CDATA[NOT REMOVE]]></Custom>
+
+      <!-- 7b. Rollback compensations (CR-04 + WARN-10). Execute="rollback" = in-script,
+           so ICE77 requires sequencing between InstallInitialize and InstallFinalize —
+           anchored after InstallFiles / chained, conditions unchanged:
+             - StopServiceOnRollback: fresh-install failure path (NOT Installed) — stop the
+               new service the install just started when the transaction rolls back.
+             - StartServiceOnRollback: upgrade failure path (Installed AND NOT REINSTALL) —
+               StopRunningService already stopped the old service before InstallFiles;
+               restart it if the upgrade rolls back. -->
+      <Custom Action="StopServiceOnRollback" After="InstallFiles"><![CDATA[NOT Installed]]></Custom>
+      <Custom Action="StartServiceOnRollback" After="StopServiceOnRollback"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
 
       <!-- 8. Commit (standard MSI) -->
     </InstallExecuteSequence>
 
-    <!--
-      CR-04 + WARN-10: Rollback sequence. If ProbeHealthAfterInstall returns Failure,
-      MSI runs the rollback sequence.
-        - StopServiceOnRollback: stop the new service we just started (fresh install
-          failure path — fires when `Installed` is empty during rollback).
-        - StartServiceOnRollback: restart the OLD service (upgrade failure path —
-          StopRunningService already stopped it before InstallFiles; fires when
-          `Installed` is set and not REINSTALL).
-      Both CAs are Execute="rollback" and Return="ignore", so they don't fail the
-      rollback if sc.exe is unavailable.
-
-      I-4: The original conditions used `$StopServiceOnRollback = 1` which references
-      CustomActionData, but neither rollback CA declares <CustomActionData>. MSI
-      condition `$X` syntax checks CustomActionData values, not regular properties —
-      so the conditions always evaluated false and the CAs never fired. Replaced
-      with standard MSI property checks (`Installed` / `REINSTALL`) which match the
-      existing pattern used for StopRunningService (line 108).
-
-      ICE77: in-script custom actions (Execute="rollback") MUST be sequenced between
-      InstallInitialize and InstallFinalize; After="InstallFinalize" made light fail
-      with LGHT0204/ICE77. Anchored after InstallFiles instead — still inside the
-      script, covering failures from service install/start through finalize.
-    -->
-    <InstallExecuteSequence>
-      <Custom Action="StopServiceOnRollback" After="InstallFiles"><![CDATA[NOT Installed]]></Custom>
-      <Custom Action="StartServiceOnRollback" After="StopServiceOnRollback"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
-    </InstallExecuteSequence>
+    <!-- Rollback compensations live in the single InstallExecuteSequence above
+         (entries 7b) — see CR-04 / WARN-10 notes there. -->
 
     <!-- UI sequence for Vietnamese error dialog display during interactive install -->
     <InstallUISequence>
