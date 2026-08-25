@@ -182,9 +182,15 @@ jobs:
       # launch flags we don't want to chase.
       - name: Install E2E dependencies
         working-directory: tests/FingerprintAgent.E2E
+        shell: pwsh
         run: |
-          npm ci
+          # pwsh does NOT abort on native command failures, so check $LASTEXITCODE
+          # explicitly - otherwise a failed npm ci gets masked and the job limps to
+          # the Playwright step with an empty node_modules.
+          npm ci --no-fund --no-audit
+          if ($LASTEXITCODE -ne 0) { Write-Error "npm ci failed"; exit $LASTEXITCODE }
           npx playwright install chromium
+          if ($LASTEXITCODE -ne 0) { Write-Error "playwright install chromium failed"; exit $LASTEXITCODE }
 
       # Mock backend is auto-started by Playwright's webServer config
       # (playwright.config.ts). webServer starts once per `playwright test`
