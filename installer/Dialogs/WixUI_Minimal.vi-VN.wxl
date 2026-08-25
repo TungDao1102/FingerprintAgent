@@ -1,18 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  WixUI_Minimal.vi-VN.wxl — Vietnamese strings for the standard WixUI_Minimal dialogs.
+  WixUI_Minimal.vi-VN.wxl — Vietnamese strings for WixUI_Minimal + the custom VcRedist dialog.
 
-  WiX localization works by:
-    1. Reference the .wxl via <WixLocalization Id="vi-VN" ...> in the main .wxs
-    2. Use !(loc.StringName) placeholders to pull localized strings
+  Only override IDs the UIExtension dialogs actually reference (wix3 wixlib):
+    - Fresh install flow : WelcomeEulaDlg -> ProgressDlg -> ExitDialog
+    - Patch installs     : WelcomeDlg (rarely seen; kept for completeness)
+    - Also linked        : ErrorDlg, MsiRMFilesInUse, UserExit, ResumeDlg, PrepareDlg,
+                           FatalError, FilesInUse (button labels below cover their texts)
+  Strings not referenced by any of those dialogs were removed (InstallDlgTitle,
+  InstallScopeDlgTitle, FinishedDlg*, WixUIInstall) — they belong to other UI sets.
 
-  We provide Vietnamese overrides only for the strings we need:
-    - WixUIWelcome (Welcome dialog heading)
-    - WixUIInstall (Install dialog heading)
-    - WixUIFinished (Finish dialog heading)
-    - VcRedistErrorTitle + VcRedistErrorBody (custom dialog)
--->
-<!--
   Codepage="65001" (UTF-8) is REQUIRED for this database: Windows-1258 has no
   single-byte (precomposed) form for many Vietnamese vowels used here
   (ế ề ệ ộ ứ ữ ậ ố …), so light rejects every such string with LGHT0311.
@@ -20,14 +17,25 @@
   must be set here (and mirrored on Product).
 -->
 <WixLocalization Culture="vi-VN" Codepage="65001" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+
+  <!-- WelcomeEulaDlg — first dialog on a fresh install -->
+  <String Id="WelcomeEulaDlgTitle">{\WixUI_Font_Title}Giấy phép sử dụng Fingerprint Agent</String>
+  <String Id="WelcomeEulaDlgLicenseAcceptedCheckBox">Tôi &amp;đồng ý với các điều khoản cấp phép</String>
+  <String Id="WelcomeEulaDlgInstall">Cài đặt</String>
+
+  <!-- WelcomeDlg — patch installs only -->
   <String Id="WelcomeDlgTitle">{\WixUI_Font_Title}Chào mừng đến với Trình cài đặt Fingerprint Agent</String>
-  <String Id="WelcomeDlgDescription">Trình cài đặt này sẽ cài đặt dịch vụ FingerprintAgent lên máy tính của bạn.[BR][BR]Dịch vụ này cung cấp API HTTP cục bộ (localhost:5043) để các ứng dụng web HIS có thể yêu cầu quét vân tay từ máy quét USB.[BR][BR]Nhấn Tiếp tục để bắt đầu.</String>
-  <String Id="InstallDlgTitle">{\WixUI_Font_Title}Đang cài đặt Fingerprint Agent</String>
-  <String Id="InstallScopeDlgTitle">{\WixUI_Font_Title}Phạm vi cài đặt</String>
+  <String Id="WelcomeDlgDescription">Trình cài đặt sẽ cập nhật Fingerprint Agent trên máy tính của bạn. Nhấn Tiếp tục để bắt đầu.</String>
+
+  <!-- ProgressDlg -->
   <String Id="ProgressDlgTitle">Đang cài đặt Fingerprint Agent</String>
-  <String Id="ProgressDlgTextInstalling">Đang cài đặt dịch vụ FingerprintAgent...</String>
-  <String Id="FinishedDlgTitle">{\WixUI_Font_Title}Cài đặt hoàn tất</String>
-  <String Id="FinishedDlgMessage">Cài đặt FingerprintAgent đã hoàn tất.[BR][BR]Dịch vụ đã được khởi động và sẵn sàng nhận yêu cầu từ ứng dụng web.[BR][BR]Nhấn Đóng để thoát.</String>
+  <String Id="ProgressDlgTextInstalling">Đang cài đặt, vui lòng đợi...</String>
+
+  <!-- ExitDialog -->
+  <String Id="ExitDialogTitle">{\WixUI_Font_Title}Cài đặt hoàn tất</String>
+  <String Id="ExitDialogDescription">Fingerprint Agent đã được cài đặt và dịch vụ đã khởi động. Nhấn Hoàn tất để đóng trình cài đặt.</String>
+
+  <!-- Shared button labels -->
   <String Id="WixUIOk">Đồng ý</String>
   <String Id="WixUICancel">Hủy</String>
   <String Id="WixUINext">Tiếp tục &gt;</String>
@@ -36,7 +44,10 @@
   <String Id="WixUIClose">Đóng</String>
   <String Id="WixUIYes">Có</String>
   <String Id="WixUINo">Không</String>
-  <String Id="WixUIInstall">Cài đặt</String>
+  <String Id="WixUIPrint">&amp;In</String>
+
+  <!-- VcRedistErrorDialog (custom dialog, DialogRef'd from FingerprintAgent.Installer.wxs) -->
   <String Id="VcRedistErrorTitle">Thiếu Microsoft Visual C++ Redistributable (x86)</String>
-  <String Id="VcRedistErrorBody">Máy tính này chưa được cài đặt thư viện Microsoft Visual C++ Redistributable (x86), cần thiết để FingerprintAgent hoạt động.[BR][BR]Vui lòng tải và cài đặt từ:[BR]https://aka.ms/vs/17/release/vc_redist.x86.exe[BR][BR]Sau khi cài đặt xong, hãy chạy lại trình cài đặt FingerprintAgent.</String>
+  <String Id="VcRedistErrorBody">Máy tính này chưa cài Microsoft Visual C++ Redistributable (x86) — thành phần cần thiết để FingerprintAgent hoạt động.[BR][BR]Vui lòng tải và cài đặt từ:[BR]https://aka.ms/vs/17/release/vc_redist.x86.exe[BR][BR]Sau đó chạy lại trình cài đặt này.</String>
+
 </WixLocalization>
