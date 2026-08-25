@@ -18,6 +18,12 @@ const MOCK_BACKEND_ORIGIN = 'http://127.0.0.1:8080';
 const AGENT_ORIGIN = 'http://127.0.0.1:5043';
 
 test.describe('Browser -> agent -> backend round-trip', () => {
+    // All tests in this block share the mock backend's `/received` array
+    // (see WARN-04 below). With `fullyParallel: true`, parallel workers race
+    // on that array — a concurrent test's DELETE/POST clobbers our exact-count
+    // assertion. Force serial execution within this describe.
+    test.describe.configure({ mode: 'serial' });
+
     // WARN-04: wipe the mock backend's recorded entries before EACH test so a
     // previous test's entries don't satisfy this test's `received.length >= 1`
     // assertion when its own capture chain silently fails.

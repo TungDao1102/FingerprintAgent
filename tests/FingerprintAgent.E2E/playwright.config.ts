@@ -35,15 +35,21 @@ export default defineConfig({
 
   use: {
     baseURL: 'http://127.0.0.1:8080',
-    trace: 'retain-on-failure',
+    trace: 'off',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'off',
   },
 
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        channel: 'chrome',
+        launchOptions: {
+          executablePath: 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+        },
+      },
     },
   ],
 
