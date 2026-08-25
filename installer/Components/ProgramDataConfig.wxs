@@ -30,7 +30,7 @@
         <CreateFolder Directory="PROGRAMDATAFOLDER">
           <util:PermissionEx User="SYSTEM" GenericAll="yes" />
           <util:PermissionEx User="Administrators" GenericAll="yes" />
-          <util:PermissionEx User="Users" GenericRead="yes" />
+          <util:PermissionEx User="Users" GenericRead="yes" Read="yes" />
         </CreateFolder>
         <RemoveFolder Id="rmv_ProgramDataDir" On="uninstall" />
       </Component>
