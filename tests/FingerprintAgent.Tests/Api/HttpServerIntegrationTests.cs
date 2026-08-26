@@ -55,8 +55,7 @@ namespace FingerprintAgent.Tests.Api
         {
             var requestBody = new
             {
-                thamChieuId = "t1",
-                maPhieu = "P1"
+                requestId = "t1"
             };
 
             var content = new StringContent(

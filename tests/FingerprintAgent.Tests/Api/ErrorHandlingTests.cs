@@ -135,7 +135,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
 
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_capturedContext, mock);
@@ -165,7 +165,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
 
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_capturedContext, mock);
@@ -194,7 +194,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
 
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_capturedContext, mock);
@@ -221,7 +221,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\"}");
+            var responseTask = SendHttpRequestAsync("{\"purpose\":\"enrollment\"}");
 
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_capturedContext, mock);
@@ -251,7 +251,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             ResetContextReady();
-            var responseTask = SendHttpRequestAsync("{\"thamChieuId\":\"test\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
 
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_capturedContext, mock);

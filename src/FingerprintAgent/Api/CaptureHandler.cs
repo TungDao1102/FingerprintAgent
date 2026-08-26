@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -21,6 +22,8 @@ namespace FingerprintAgent.Api
         }
 
         private const int MaxBodyBytes = 1 * 1024 * 1024;
+        private const int MetadataMaxKeys = 20;
+        private const int MetadataMaxFieldLength = 100;
 
         public async Task HandleAsync(HttpListenerContext context, IScannerAdapter scanner, string correlationId = null, CancellationToken cancellationToken = default)
         {
@@ -37,12 +40,10 @@ namespace FingerprintAgent.Api
                     context.Request.InputStream, context.Request.ContentEncoding, MaxBodyBytes, CancellationToken.None);
 
                 if (tooLarge)
-
-                if (tooLarge)
                 {
                     const string errorMessage = "Request body too large";
                     _logger?.Error(correlationId, $"Capture rejected — PAYLOAD_TOO_LARGE: {errorMessage}");
-                    await WriteErrorResponseAsync(context, 413, false, errorMessage, "PAYLOAD_TOO_LARGE", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 413, false, errorMessage, "PAYLOAD_TOO_LARGE", null, null, correlationId, requestId: null);
                     return;
                 }
 
@@ -52,7 +53,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Request body is empty";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId, requestId: null);
                     return;
                 }
 
@@ -65,7 +66,7 @@ namespace FingerprintAgent.Api
                 {
                     const string errorMessage = "Invalid JSON in request body";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId, requestId: null);
                     return;
                 }
 
@@ -74,25 +75,20 @@ namespace FingerprintAgent.Api
                 {
                     const string nullBodyError = "Invalid JSON in request body";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {nullBodyError}");
-                    await WriteErrorResponseAsync(context, 400, false, nullBodyError, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, nullBodyError, "INVALID_REQUEST", null, null, correlationId, requestId: null);
                     return;
                 }
 
-                if (string.IsNullOrWhiteSpace(request.ThamChieuId))
+                if (string.IsNullOrWhiteSpace(request.RequestId))
                 {
-                    const string errorMessage = "Missing required field: thamChieuId";
+                    const string errorMessage = "Missing required field: requestId";
                     _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
+                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId, requestId: null);
                     return;
                 }
 
-                if (string.IsNullOrWhiteSpace(request.MaPhieu))
-                {
-                    const string errorMessage = "Missing required field: maPhieu";
-                    _logger?.Error(correlationId, $"Capture failed — INVALID_REQUEST: {errorMessage}");
-                    await WriteErrorResponseAsync(context, 400, false, errorMessage, "INVALID_REQUEST", null, null, correlationId);
-                    return;
-                }
+                var sanitizedMetadata = SanitizeMetadata(request.Metadata, correlationId);
+                LogRequestContext(correlationId, request, sanitizedMetadata);
 
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -111,13 +107,14 @@ namespace FingerprintAgent.Api
                     var timestamp = DateTime.UtcNow.ToString("O");
 
                     _logger?.Error(correlationId, $"Capture failed — {errorCode}: {result.ErrorMessage}");
-                    await WriteErrorResponseAsync(context, statusCode, false, result.ErrorMessage, errorCode, vendorErrorCode, timestamp, correlationId);
+                    await WriteErrorResponseAsync(context, statusCode, false, result.ErrorMessage, errorCode, vendorErrorCode, timestamp, correlationId, requestId: request.RequestId);
                     return;
                 }
 
                 var imageBytes = result.ImageBytes ?? Array.Empty<byte>();
                 var response = new CaptureResponse
                 {
+                    RequestId = request.RequestId,
                     IsSuccess = true,
                     ImageBytes = Convert.ToBase64String(imageBytes),
                     MimeType = result.MimeType,
@@ -130,21 +127,14 @@ namespace FingerprintAgent.Api
 
                 _logger?.Info(correlationId, $"Capture completed — deviceId: {scanner.DeviceId}");
 
-                string json = JsonConvert.SerializeObject(response);
-                byte[] buffer = Encoding.UTF8.GetBytes(json);
-
-                context.Response.StatusCode = 200;
-                context.Response.ContentType = "application/json";
-                context.Response.ContentLength64 = buffer.Length;
-                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                await context.Response.OutputStream.FlushAsync();
-                context.Response.OutputStream.Close();
+                await WriteJsonResponseAsync(context, 200, response);
             }
             catch (Exception ex)
             {
                 var errorMessage = $"Capture failed: {ex.Message}";
                 _logger?.Error(correlationId, $"Capture failed — CAPTURE_FAILED: {ex.Message}");
-                await WriteErrorResponseAsync(context, 500, false, errorMessage, "CAPTURE_FAILED", null, null, correlationId);
+                // request is out of scope in the catch — try to recover requestId from a re-parse is not worth it.
+                await WriteErrorResponseAsync(context, 500, false, errorMessage, "CAPTURE_FAILED", null, null, correlationId, requestId: null);
             }
         }
 
@@ -185,17 +175,70 @@ namespace FingerprintAgent.Api
             }
         }
 
-        private async Task WriteErrorResponseAsync(HttpListenerContext context, int statusCode, bool isSuccess, string errorMessage, string errorCode, string vendorErrorCode, string timestamp, string correlationId = null)
+        /// <summary>
+        /// Drops oversized metadata entries to keep the agent cheap and predictable.
+        /// - More than MetadataMaxKeys entries: keep the first N (deterministic order from the caller's JSON).
+        /// - Key or value longer than MetadataMaxFieldLength: drop the entry.
+        /// Null/empty input returns null (caller distinguishes "no metadata" from "empty metadata").
+        /// </summary>
+        private Dictionary<string, string> SanitizeMetadata(Dictionary<string, string> metadata, string correlationId)
         {
-            var response = new CaptureResponse
+            if (metadata == null)
             {
-                IsSuccess = isSuccess,
-                ErrorMessage = errorMessage,
-                ErrorCode = errorCode,
-                VendorErrorCode = vendorErrorCode,
-                Timestamp = timestamp ?? DateTime.UtcNow.ToString("O")
-            };
+                return null;
+            }
 
+            var sanitized = new Dictionary<string, string>(Math.Min(metadata.Count, MetadataMaxKeys));
+            int dropped = 0;
+            foreach (var kvp in metadata)
+            {
+                if (sanitized.Count >= MetadataMaxKeys)
+                {
+                    dropped++;
+                    continue;
+                }
+                if (string.IsNullOrEmpty(kvp.Key)
+                    || kvp.Key.Length > MetadataMaxFieldLength
+                    || kvp.Value == null
+                    || kvp.Value.Length > MetadataMaxFieldLength)
+                {
+                    dropped++;
+                    continue;
+                }
+                sanitized[kvp.Key] = kvp.Value;
+            }
+
+            if (dropped > 0)
+            {
+                _logger?.Warn(correlationId, $"metadata: dropped {dropped} entry(ies) (max {MetadataMaxKeys} keys, {MetadataMaxFieldLength} chars/key/value)");
+            }
+
+            return sanitized;
+        }
+
+        private void LogRequestContext(string correlationId, CaptureRequest request, Dictionary<string, string> sanitizedMetadata)
+        {
+            _logger?.Info(correlationId, $"requestId: {request.RequestId}");
+            if (!string.IsNullOrEmpty(request.Purpose))
+            {
+                _logger?.Info(correlationId, $"purpose: {request.Purpose}");
+            }
+            if (sanitizedMetadata != null && sanitizedMetadata.Count > 0)
+            {
+                var sb = new StringBuilder("metadata: ");
+                bool first = true;
+                foreach (var kvp in sanitizedMetadata)
+                {
+                    if (!first) sb.Append(", ");
+                    sb.Append(kvp.Key).Append('=').Append(kvp.Value);
+                    first = false;
+                }
+                _logger?.Debug(correlationId, sb.ToString());
+            }
+        }
+
+        private async Task WriteJsonResponseAsync(HttpListenerContext context, int statusCode, CaptureResponse response)
+        {
             string json = JsonConvert.SerializeObject(response);
             byte[] buffer = Encoding.UTF8.GetBytes(json);
 
@@ -205,6 +248,21 @@ namespace FingerprintAgent.Api
             await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             await context.Response.OutputStream.FlushAsync();
             context.Response.OutputStream.Close();
+        }
+
+        private async Task WriteErrorResponseAsync(HttpListenerContext context, int statusCode, bool isSuccess, string errorMessage, string errorCode, string vendorErrorCode, string timestamp, string correlationId = null, string requestId = null)
+        {
+            var response = new CaptureResponse
+            {
+                RequestId = requestId,
+                IsSuccess = isSuccess,
+                ErrorMessage = errorMessage,
+                ErrorCode = errorCode,
+                VendorErrorCode = vendorErrorCode,
+                Timestamp = timestamp ?? DateTime.UtcNow.ToString("O")
+            };
+
+            await WriteJsonResponseAsync(context, statusCode, response);
         }
     }
 }

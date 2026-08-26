@@ -128,14 +128,14 @@ namespace FingerprintAgent.Tests.Api
         }
 
         [Fact]
-        public async Task HandleAsync_MissingThamChieuId_Returns400()
+        public async Task HandleAsync_MissingRequestId_Returns400()
         {
-            // Arrange
+            // Arrange — body is valid JSON but has no requestId field
             var scanner = new MockScannerAdapterWithSettableProperties();
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"maPhieu\":\"P001\"}");
+            var responseTask = SendAsync("{\"purpose\":\"enrollment\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner);
 
@@ -146,40 +146,18 @@ namespace FingerprintAgent.Tests.Api
             string body = await ReadBodyAsync(response);
             var parsed = JsonConvert.DeserializeObject<CaptureResponse>(body);
             Assert.Equal("INVALID_REQUEST", parsed.ErrorCode);
-            Assert.Contains("thamChieuId", parsed.ErrorMessage);
+            Assert.Contains("requestId", parsed.ErrorMessage);
         }
 
         [Fact]
-        public async Task HandleAsync_MissingMaPhieu_Returns400()
+        public async Task HandleAsync_WhitespaceRequestId_Returns400()
         {
-            // Arrange
+            // Arrange — requestId is non-empty but all whitespace
             var scanner = new MockScannerAdapterWithSettableProperties();
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-001\"}");
-            await WaitForContextAsync(5000);
-            await handler.HandleAsync(_fixture.CapturedContext, scanner);
-
-            var response = await GetResponseAsync(responseTask);
-
-            // Assert
-            Assert.Equal(400, (int)response.StatusCode);
-            string body = await ReadBodyAsync(response);
-            var parsed = JsonConvert.DeserializeObject<CaptureResponse>(body);
-            Assert.Equal("INVALID_REQUEST", parsed.ErrorCode);
-            Assert.Contains("maPhieu", parsed.ErrorMessage);
-        }
-
-        [Fact]
-        public async Task HandleAsync_WhitespaceThamChieuId_Returns400()
-        {
-            // Arrange
-            var scanner = new MockScannerAdapterWithSettableProperties();
-            var handler = new CaptureHandler(null);
-
-            // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"  \",\"maPhieu\":\"P001\"}");
+            var responseTask = SendAsync("{\"requestId\":\"   \"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner);
 
@@ -207,7 +185,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-001\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendAsync("{\"requestId\":\"REF-001\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner);
 
@@ -229,6 +207,99 @@ namespace FingerprintAgent.Tests.Api
         }
 
         [Fact]
+        public async Task HandleAsync_Success_EchoesRequestIdInResponse()
+        {
+            // Arrange — requestId must round-trip so the caller can correlate
+            // request ↔ response without parsing agent log files.
+            var scanner = new MockScannerAdapterWithSettableProperties
+            {
+                ScanResult = CaptureResult.Ok(new byte[] { 1, 2, 3 }),
+                DeviceIdValue = "test-device-001"
+            };
+            var handler = new CaptureHandler(null);
+
+            // Act
+            var responseTask = SendAsync("{\"requestId\":\"echo-test-42\"}");
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_fixture.CapturedContext, scanner);
+
+            var response = await GetResponseAsync(responseTask);
+
+            // Assert
+            Assert.Equal(200, (int)response.StatusCode);
+            string body = await ReadBodyAsync(response);
+            var parsed = JsonConvert.DeserializeObject<CaptureResponse>(body);
+            Assert.Equal("echo-test-42", parsed.RequestId);
+        }
+
+        [Fact]
+        public async Task HandleAsync_Success_AcceptsPurposeAndMetadata_DoesNotBreakScan()
+        {
+            // Arrange — optional fields are accepted without altering the scan path
+            var scanner = new MockScannerAdapterWithSettableProperties
+            {
+                ScanResult = CaptureResult.Ok(new byte[] { 9 }),
+                DeviceIdValue = "dev-purpose"
+            };
+            var handler = new CaptureHandler(null);
+
+            // Act
+            var body = "{\"requestId\":\"r1\",\"purpose\":\"enrollment\",\"metadata\":{\"formCode\":\"F-1\",\"appVersion\":\"1.2.3\"}}";
+            var responseTask = SendAsync(body);
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_fixture.CapturedContext, scanner);
+
+            var response = await GetResponseAsync(responseTask);
+
+            // Assert
+            Assert.Equal(200, (int)response.StatusCode);
+            string responseBody = await ReadBodyAsync(response);
+            var parsed = JsonConvert.DeserializeObject<CaptureResponse>(responseBody);
+            Assert.Equal("r1", parsed.RequestId);
+            Assert.True(parsed.IsSuccess);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OversizedMetadata_DropsInvalidEntries_Returns200()
+        {
+            // Arrange — metadata with: one valid entry, one over-long value (dropped),
+            // one over-long key (dropped), 19 extras (kept up to the 20-key cap),
+            // and a 22nd entry (excess dropped by cap).
+            var scanner = new MockScannerAdapterWithSettableProperties
+            {
+                ScanResult = CaptureResult.Ok(new byte[] { 7 }),
+                DeviceIdValue = "dev-md"
+            };
+            var handler = new CaptureHandler(null);
+
+            var sb = new StringBuilder("{\"requestId\":\"r-md\",\"metadata\":{");
+            sb.Append("\"valid\":\"ok\"");
+            sb.Append(",\"longValue\":\"").Append(new string('v', 150)).Append("\"");  // value too long → dropped
+            sb.Append(",\"").Append(new string('k', 150)).Append("\":\"ok\"");        // key too long → dropped
+            for (int i = 0; i < 19; i++)
+            {
+                sb.Append(",\"k").Append(i).Append("\":\"v").Append(i).Append("\"");
+            }
+            sb.Append(",\"kExtra\":\"vExtra\"");  // 22nd entry → dropped by 20-key cap
+            sb.Append("}}");
+
+            // Act
+            var responseTask = SendAsync(sb.ToString());
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_fixture.CapturedContext, scanner);
+
+            var response = await GetResponseAsync(responseTask);
+
+            // Assert — capture still succeeds; oversized entries are silently dropped,
+            // not turned into a 400 or 500.
+            Assert.Equal(200, (int)response.StatusCode);
+            string responseBody = await ReadBodyAsync(response);
+            var parsed = JsonConvert.DeserializeObject<CaptureResponse>(responseBody);
+            Assert.True(parsed.IsSuccess);
+            Assert.Equal("r-md", parsed.RequestId);
+        }
+
+        [Fact]
         public async Task HandleAsync_Success_GeneratesCorrelationIdWhenNotProvided()
         {
             // Arrange
@@ -242,7 +313,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-X\",\"maPhieu\":\"P002\"}");
+            var responseTask = SendAsync("{\"requestId\":\"REF-X\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner, correlationId: null);
 
@@ -269,7 +340,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-001\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendAsync("{\"requestId\":\"REF-001\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner);
 
@@ -282,6 +353,8 @@ namespace FingerprintAgent.Tests.Api
             Assert.False(parsed.IsSuccess);
             Assert.Equal("SCANNER_NOT_CONNECTED", parsed.ErrorCode);
             Assert.Equal("NO_DEVICE", parsed.VendorErrorCode);
+            // requestId must echo even on scanner-failure path so caller can still correlate
+            Assert.Equal("REF-001", parsed.RequestId);
         }
 
         [Fact]
@@ -296,7 +369,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-001\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendAsync("{\"requestId\":\"REF-001\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner);
 
@@ -308,6 +381,7 @@ namespace FingerprintAgent.Tests.Api
             var parsed = JsonConvert.DeserializeObject<CaptureResponse>(body);
             Assert.Equal("CAPTURE_TIMEOUT", parsed.ErrorCode);
             Assert.Equal("TIMEOUT_ERR", parsed.VendorErrorCode);
+            Assert.Equal("REF-001", parsed.RequestId);
         }
 
         [Fact]
@@ -323,7 +397,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             // Act
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-001\",\"maPhieu\":\"P001\"}");
+            var responseTask = SendAsync("{\"requestId\":\"REF-001\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, throwingScanner.Object);
 
@@ -336,6 +410,8 @@ namespace FingerprintAgent.Tests.Api
             Assert.False(parsed.IsSuccess);
             Assert.Equal("CAPTURE_FAILED", parsed.ErrorCode);
             Assert.Contains("boom", parsed.ErrorMessage);
+            // requestId unknown on the catch-all path (already past request scope)
+            Assert.Null(parsed.RequestId);
         }
     }
 }

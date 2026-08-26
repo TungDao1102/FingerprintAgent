@@ -79,7 +79,7 @@ namespace FingerprintAgent.Tests.Api
                 cts.Cancel();
 
                 // Act
-                var responseTask = SendAsync("{\"thamChieuId\":\"REF-1\",\"maPhieu\":\"P1\"}");
+                var responseTask = SendAsync("{\"requestId\":\"REF-1\"}");
                 await WaitForContextAsync(5000);
                 await handler.HandleAsync(_fixture.CapturedContext, scanner, "cid", cts.Token);
 
@@ -107,7 +107,7 @@ namespace FingerprintAgent.Tests.Api
             using (var cts = new CancellationTokenSource())
             {
                 // Act
-                var responseTask = SendAsync("{\"thamChieuId\":\"REF-1\",\"maPhieu\":\"P1\"}");
+                var responseTask = SendAsync("{\"requestId\":\"REF-1\"}");
                 await WaitForContextAsync(5000);
                 await handler.HandleAsync(_fixture.CapturedContext, scanner.Object, "cid", cts.Token);
 
@@ -134,7 +134,7 @@ namespace FingerprintAgent.Tests.Api
             var handler = new CaptureHandler(null);
 
             // Act — no CT supplied (backward-compat overload)
-            var responseTask = SendAsync("{\"thamChieuId\":\"REF-1\",\"maPhieu\":\"P1\"}");
+                var responseTask = SendAsync("{\"requestId\":\"REF-1\"}");
             await WaitForContextAsync(5000);
             await handler.HandleAsync(_fixture.CapturedContext, scanner.Object);
 
@@ -164,7 +164,7 @@ namespace FingerprintAgent.Tests.Api
             using (var cts = new CancellationTokenSource())
             {
                 // Act — fire the request, cancel after 100ms, and measure how long the handler takes
-                var responseTask = SendAsync("{\"thamChieuId\":\"REF-1\",\"maPhieu\":\"P1\"}");
+                var responseTask = SendAsync("{\"requestId\":\"REF-1\"}");
                 await WaitForContextAsync(5000);
 
                 var sw = System.Diagnostics.Stopwatch.StartNew();
