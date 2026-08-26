@@ -19,11 +19,8 @@
 .PARAMETER BaseUrl
     Agent HTTP base URL. Default http://localhost:5043
 
-.PARAMETER ThamChieuId
-    Test reference ID sent to /api/capture
-
-.PARAMETER MaPhieu
-    Test order ID sent to /api/capture
+.PARAMETER RequestId
+    Test requestId sent to /api/capture
 
 .EXAMPLE
     .\scripts\diagnostic\Test-ZK9500.ps1
@@ -37,8 +34,7 @@
 [CmdletBinding()]
 param(
     [string]$BaseUrl = "http://localhost:5043",
-    [string]$ThamChieuId = "diag-001",
-    [string]$MaPhieu = "DIAG-2026-0001",
+    [string]$RequestId = "diag-001",
     [switch]$SkipHealth,
     [switch]$SkipCaptureWithFinger,
     [switch]$SkipCaptureNoFinger,
@@ -164,7 +160,7 @@ function Get-UsbFingerprintDevices {
 
 Write-Section "ZK9500 Capture Diagnostic — FingerprintAgent"
 Write-Host "Agent URL: $BaseUrl"
-Write-Host "Test ID:   $ThamChieuId"
+Write-Host "Test ID:   $RequestId"
 Write-Host "Time:      $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
 
 $results = [ordered]@{}
@@ -198,8 +194,7 @@ if (-not $SkipCaptureWithFinger) {
     Write-Host ""
 
     $body = @{
-        thamChieuId = $ThamChieuId
-        maPhieu     = $MaPhieu
+        requestId = $RequestId
     } | ConvertTo-Json -Depth 3
 
     $results['T2_captureWithFinger'] = Invoke-CaptureWithTiming -Label "FINGER" -Url "$BaseUrl/api/capture" -Body $body
@@ -211,8 +206,7 @@ if (-not $SkipCaptureNoFinger) {
     Write-Host "DO NOT place finger on scanner. This measures native SDK timeout."
 
     $body = @{
-        thamChieuId = "$ThamChieuId-noFinger"
-        maPhieu     = "$MaPhieu-NF"
+        requestId = "$RequestId-noFinger"
     } | ConvertTo-Json -Depth 3
 
     $results['T3_captureNoFinger'] = Invoke-CaptureWithTiming -Label "NO FINGER" -Url "$BaseUrl/api/capture" -Body $body

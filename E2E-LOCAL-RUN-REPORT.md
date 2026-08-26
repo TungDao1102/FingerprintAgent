@@ -30,7 +30,7 @@ Repo: C:\Users\admin\Music\FingerprintAgent (commit b6a4927 + local uncommitted)
     Result:  7 PASSED, 1 FAILED, 1 did not run
     Passing:
       - Capture flow POST /api/capture -> 200 + PNG base64 + SHA-256
-      - Capture flow POST /api/capture missing maPhieu -> 400 INVALID_REQUEST
+      - Capture flow POST /api/capture missing requestId -> 400 INVALID_REQUEST
       - CORS preflight OPTIONS -> 204 + wildcard headers
       - CORS headers on actual POST response (Playwright request API)
       - Service healthy precondition guard

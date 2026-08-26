@@ -180,12 +180,9 @@ Nếu có lỗi, sẽ có entry **Error** kèm mô tả chi tiết.
 
 ```powershell
 $body = @{
-    thamChieuId = 'test'
-    maPhieu     = 'TEST-001'
-    loaiPhieu   = 'signature'
-    vaiKyId     = $null
-    nhanLucId   = $null
-    metadata    = @{}
+    requestId = 'test'
+    purpose   = 'signature'
+    metadata  = @{}
 } | ConvertTo-Json
 
 Invoke-WebRequest http://127.0.0.1:5043/api/capture `

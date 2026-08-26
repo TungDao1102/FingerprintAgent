@@ -25,8 +25,7 @@ $endpoint = "$BaseUrl/api/capture"
 
 function Send-Capture($label, $fingerPlaced) {
     $body = @{
-        thamChieuId = "timing-$label"
-        maPhieu     = "TIMING-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+        requestId = "timing-$label"
     } | ConvertTo-Json -Depth 3
 
     Write-Host ""
@@ -105,10 +104,9 @@ Write-Host ""
 Write-Host "TEST 3: Place finger DURING request — realistic UX"
 Write-Host "  Press ENTER immediately AFTER request fires, then place finger"
 Write-Host "  Tests if SDK has rolling timeout or single-shot"
-$body = @{
-    thamChieuId = "timing-FINGER_DURING"
-    maPhieu     = "TIMING-DURING-$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
-} | ConvertTo-Json -Depth 3
+    $body = @{
+        requestId = "timing-FINGER_DURING"
+    } | ConvertTo-Json -Depth 3
 Write-Host ""
 Write-Host "[FINGER_DURING] Sending request NOW at $(Get-Date -Format 'HH:mm:ss.fff') — place finger!"
 Write-Host "[FINGER_DURING] >>> PLACE FINGER ON SCANNER NOW <<<" -ForegroundColor Magenta

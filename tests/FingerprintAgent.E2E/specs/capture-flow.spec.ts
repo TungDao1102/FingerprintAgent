@@ -15,11 +15,8 @@ import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 const AGENT_ORIGIN = 'http://127.0.0.1:5043';
 const VALID_REQUEST = {
-    thamChieuId: 'capture-flow-test',
-    maPhieu: 'CAP-001',
-    loaiPhieu: 'signature',
-    vaiKyId: null,
-    nhanLucId: null,
+    requestId: 'capture-flow-test',
+    purpose: 'signature',
     metadata: { source: 'capture-flow.spec.ts' },
 };
 
@@ -78,12 +75,11 @@ test.describe('Capture flow (POST /api/capture)', () => {
         }
     });
 
-    test('returns 400 when required field (maPhieu) is missing', async () => {
+    test('returns 400 when required field (requestId) is missing', async () => {
         const ctx = await playwrightRequest.newContext();
         try {
-            // maPhieu intentionally omitted.
             const invalidRequest = { ...VALID_REQUEST };
-            delete (invalidRequest as { maPhieu?: string }).maPhieu;
+            delete (invalidRequest as { requestId?: string }).requestId;
 
             const response = await ctx.fetch(`${AGENT_ORIGIN}/api/capture`, {
                 method: 'POST',

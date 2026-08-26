@@ -65,11 +65,8 @@ test.describe('CORS preflight (OPTIONS /api/capture)', () => {
                     Origin: SAAS_ORIGIN,
                 },
                 data: {
-                    thamChieuId: 'cors-post-test',
-                    maPhieu: 'CORS-001',
-                    loaiPhieu: 'signature',
-                    vaiKyId: null,
-                    nhanLucId: null,
+                    requestId: 'cors-post-test',
+                    purpose: 'signature',
                     metadata: { source: 'cors-preflight.spec.ts' },
                 },
             });

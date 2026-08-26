@@ -1,11 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$BaseUrl = "http://localhost:5043",
-    [string]$ThamChieuId = "test-001",
-    [string]$MaPhieu = "P2026-0001",
-    [string]$LoaiPhieu = "KhamBenh",
-    [string]$VaiKyId = "vai-001",
-    [string]$NhanLucId = "user-001",
+    [string]$RequestId = "test-001",
+    [string]$Purpose = "KhamBenh",
+    [string]$FormCode = "P2026-0001",
     [switch]$SaveImage
 )
 
@@ -19,9 +17,6 @@ function Invoke-SafeRestMethod {
         return $result
     }
     catch {
-        # Extract status code from exception message (works on both PS5 and PS7):
-        # PS5: "...The remote server returned an unexpected response: (400) Bad Request"
-        # PS7: "...Response status code does not indicate success: 400 (Bad Request)"
         $statusCode = $null
         if ($_.Exception.Message -match '\((\d+)\)|status code (\d+)') {
             $statusCode = if ($matches[1]) { $matches[1] } else { $matches[2] }
@@ -41,21 +36,20 @@ $health | ConvertTo-Json -Depth 3 | Write-Host
 
 Write-Host "`n=== Capture Request ==="
 $body = @{
-    thamChieuId = $ThamChieuId
-    maPhieu = $MaPhieu
-    loaiPhieu = $LoaiPhieu
-    vaiKyId = $VaiKyId
-    nhanLucId = $NhanLucId
-    metadata = @{
-        source = "Test-Capture.ps1"
+    requestId = $RequestId
+    purpose   = $Purpose
+    metadata  = @{
+        formCode = $FormCode
+        source   = "Test-Capture.ps1"
     }
 } | ConvertTo-Json -Depth 3
 
 $capture = Invoke-SafeRestMethod -Uri "$BaseUrl/api/capture" -Method "POST" -Body $body
-Write-Host "isSuccess     : $($capture.isSuccess)"
-Write-Host "deviceId      : $($capture.deviceId)"
-Write-Host "mimeType      : $($capture.mimeType)"
-Write-Host "capturedAt    : $($capture.capturedAt)"
+Write-Host "requestId      : $($capture.requestId)"
+Write-Host "isSuccess      : $($capture.isSuccess)"
+Write-Host "deviceId       : $($capture.deviceId)"
+Write-Host "mimeType       : $($capture.mimeType)"
+Write-Host "capturedAt     : $($capture.capturedAt)"
 Write-Host "verificationData: $($capture.verificationData)"
 
 if ($SaveImage -and $capture.imageBytes) {
