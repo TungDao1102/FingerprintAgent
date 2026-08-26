@@ -1,8 +1,8 @@
 name: Release MSI
 
-# D-02: CI builds MSI on tag push (v*). No local MSI build script exists.
-# The MSI is uploaded as a workflow artifact; an optional step (commented below)
-# can also auto-attach to a GitHub Release if desired.
+# CI builds MSI on tag push (v*). No local MSI build script exists.
+# MSI is uploaded as a workflow artifact AND auto-attached to a GitHub
+# Release (D-02 — internal tool, no code-signing cert required).
 
 on:
   push:
@@ -16,10 +16,11 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# No `contents: write` — the gh-release step is commented out below for v1.
-# Operator manually attaches the MSI to the GitHub Release after visual
-# confirmation. Revisit when v1.1 enables auto-attachment (requires signtool
-# + cert secret — out of scope for v1).
+# Auto-create GitHub Release and attach MSI on tag push.
+# Internal-tool deployment: no code-signing cert required (D-02 reversed
+# for v1.1+ — trusted distribution not needed for hospital-internal MSI).
+permissions:
+  contents: write  # required to create releases / upload release assets
 
 jobs:
   build-msi:
@@ -91,15 +92,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      # Optional: auto-attach MSI to GitHub Release on tag push.
-      # Uncomment to enable. By default, operator manually attaches via the
-      # GitHub UI (safer for v1 — confirms artifact is correct before publishing).
-      # Follow-up: requires signtool + cert secret for trusted MSI distribution;
-      # tracked as v1.1 work.
-      #
-      # - name: Attach MSI to GitHub Release
-      #   if: startsWith(github.ref, 'refs/tags/v')
-      #   uses: softprops/action-gh-release@v2
-      #   with:
-      #     files: installer/bin/Release/FingerprintAgent-Setup.msi
-      #     generate_release_notes: true
+      # Auto-attach MSI to GitHub Release on tag push (D-02 — internal tool,
+      # no signing required). `if` skips manual workflow_dispatch runs that
+      # don't have a v* tag to attach to.
+      - name: Attach MSI to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/bin/Release/FingerprintAgent-Setup.msi
+          generate_release_notes: true
