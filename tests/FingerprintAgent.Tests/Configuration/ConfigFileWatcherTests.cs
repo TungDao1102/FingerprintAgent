@@ -205,7 +205,7 @@ namespace FingerprintAgent.Tests.Configuration
                 Assert.Equal(1, Volatile.Read(ref fired));
                 Assert.NotNull(received);
                 Assert.NotNull(received.Scanner);
-                Assert.Equal(4, received.Scanner.Priority.Length);
+                Assert.Single(received.Scanner.Priority);
                 Assert.True(received.Scanner.MockMode);
                 Assert.Equal("allowlist", received.Cors.Mode);
             }
