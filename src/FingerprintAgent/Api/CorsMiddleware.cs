@@ -54,14 +54,14 @@ namespace FingerprintAgent.Api
                 return true;
             }
 
-            ApplyCorsHeaders(response, origin);
+            ApplyCorsHeaders(response, origin, request.Headers["Access-Control-Request-Headers"]);
 
             response.StatusCode = 204;
             response.Close();
             return true;
         }
 
-        public void ApplyCorsHeaders(HttpListenerResponse response, string origin)
+        public void ApplyCorsHeaders(HttpListenerResponse response, string origin, string requestedHeaders = null)
         {
             if (string.IsNullOrEmpty(origin))
                 return;
@@ -81,7 +81,8 @@ namespace FingerprintAgent.Api
             }
 
             response.Headers.Add("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-            response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
+            response.Headers.Add("Access-Control-Allow-Headers",
+                string.IsNullOrWhiteSpace(requestedHeaders) ? "Content-Type" : requestedHeaders);
             response.Headers.Add("Access-Control-Max-Age", "86400");
         }
     }

@@ -118,6 +118,22 @@ namespace FingerprintAgent.Tests.Api
             }
 
             [Fact]
+            public async Task Preflight_WithExtraRequestedHeaders_ShouldEchoAll()
+            {
+                var request = new HttpRequestMessage(new HttpMethod("OPTIONS"), "/api/capture");
+                request.Headers.Add("Origin", "http://example.com");
+                request.Headers.Add("Access-Control-Request-Method", "POST");
+                request.Headers.Add("Access-Control-Request-Headers", "content-type, x-custom-header");
+
+                var response = await _fixture.Client.SendAsync(request);
+
+                Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+                var allowHeaders = response.Headers.GetValues("Access-Control-Allow-Headers").FirstOrDefault();
+                Assert.NotNull(allowHeaders);
+                Assert.Contains("x-custom-header", allowHeaders, StringComparison.OrdinalIgnoreCase);
+            }
+
+            [Fact]
             public async Task Preflight_WithoutOrigin_ReturnsNotFound()
             {
                 var request = new HttpRequestMessage(new HttpMethod("OPTIONS"), "/api/capture");
