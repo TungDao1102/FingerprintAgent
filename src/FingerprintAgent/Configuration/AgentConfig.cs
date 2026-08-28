@@ -32,7 +32,7 @@ namespace FingerprintAgent.Configuration
 
     public class ScannerConfig
     {
-        public string[] Priority { get; set; } = new[] { "ZKTeco", "SecuGen", "DigitalPersona", "Futronic" };
+        public string[] Priority { get; set; } = new[] { "ZKTeco" };
         public bool MockMode { get; set; } = true;
     }
 
