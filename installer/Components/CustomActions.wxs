@@ -14,12 +14,14 @@
     - SeedProgramDataConfig    Schedule: InstallExecuteSequence after InstallFiles (write config)
     - SetDelayedAutoStart      Schedule: InstallExecuteSequence after InstallServices (D-32a)
     - ProbeHealthAfterInstall  Schedule: InstallExecuteSequence after StartServices (validate)
+    - ArchiveInstallLog        Schedule: after InstallFinalize (success) + rollback (log copy to ProgramData)
 
   RETURN VALUES
     CheckVcRedist / ProbeHealthAfterInstall: Failure on rollback
     DetectInstallType / SeedProgramDataConfig: Failure halts install (writes log via session.Log)
     StopRunningService: always Success (failure logged but doesn't block)
     SetDelayedAutoStart: always Success (failure degrades to immediate auto-start, logged)
+    ArchiveInstallLog: always Success (best-effort log copy — must never break install/rollback)
 
   CustomActionData (passed to CAs)
     SeedProgramDataConfig receives:
@@ -40,7 +42,7 @@
                   Execute="immediate"
                   Return="check" />
 
-    <!-- CheckVcRedist: registry probe, fails install if VC++ x86 missing -->
+    <!-- CheckVcRedist: registry probe; shows the Vietnamese notice (Session.Message) and fails the install if VC++ x86 is missing -->
     <CustomAction Id="CheckVcRedist"
                   BinaryKey="CustomActionsCA"
                   DllEntry="CheckVcRedist"
@@ -85,6 +87,34 @@
                   BinaryKey="CustomActionsCA"
                   DllEntry="SetDelayedAutoStart"
                   Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
+    <!--
+      Log consolidation: copies the active MSI log (MsiLogFileLocation, guaranteed by the
+      MsiLogging property) into [PROGRAMDATAFOLDER]\Logs\install-yyyyMMdd-HHmmss.log so
+      install diagnostics sit next to agent.log. Snapshot semantics: MSI keeps writing the
+      %TEMP% original after the copy. Always Success — best-effort, never fails an install.
+      One DllEntry serves both modes: the immediate success path reads session properties
+      directly; the rollback path must receive data via CustomActionData (deferred CAs
+      cannot read session properties), hence SetArchiveInstallLogRollbackData (Type-51).
+    -->
+    <CustomAction Id="ArchiveInstallLog"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="ArchiveInstallLog"
+                  Execute="immediate"
+                  Return="ignore" />
+
+    <CustomAction Id="SetArchiveInstallLogRollbackData"
+                  Property="ArchiveInstallLogOnRollback"
+                  Value="MsiLogSource=[MsiLogFileLocation];LogTargetDir=[PROGRAMDATAFOLDER]Logs"
+                  Execute="immediate"
+                  Return="check" />
+
+    <CustomAction Id="ArchiveInstallLogOnRollback"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="ArchiveInstallLog"
+                  Execute="rollback"
                   Impersonate="no"
                   Return="ignore" />
 

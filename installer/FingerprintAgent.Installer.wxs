@@ -65,8 +65,27 @@
     <Property Id="InstallTemplatePath" Value="[INSTALLFOLDER]config.template.json" />
     <Property Id="ProgramDataConfigPath" Value="[PROGRAMDATAFOLDER]config.json" />
 
+    <!--
+      CR-07 follow-up (implemented): text for the Vietnamese missing-VC++ notice that
+      CheckVcRedist renders via Session.Message (MsiProcessMessage) from the execute
+      sequence — authored dialogs cannot be displayed there. Sourced from the same loc
+      strings as VcRedistErrorDialog so the .wxl stays the single text source.
+    -->
+    <Property Id="VcRedistErrorTitleText" Value="!(loc.VcRedistErrorTitle)" />
+    <Property Id="VcRedistErrorBodyText" Value="!(loc.VcRedistErrorBody)" />
+
     <!-- D-29: REMOVE_LOGS property; default empty (=preserve logs on uninstall) -->
     <Property Id="REMOVE_LOGS" Secure="yes" />
+
+    <!--
+      Always-on MSI logging: Windows Installer (4.0+, our InstallerVersion=500) writes
+      %TEMP%\MSIxxxxx.log for every install/modify/uninstall of this package,
+      independent of UI level — /qn silent deployments produce a log too (review
+      follow-up: install.log previously existed only when IT passed /l*v manually).
+      An explicit msiexec /l*v on the command line overrides MsiLogging.
+      '!' flushes each line so the log survives a mid-install crash.
+    -->
+    <Property Id="MsiLogging" Value="voicewarmup!" />
 
     <!-- D-18: Programs and Features links -->
     <Property Id="ARPHELPLINK" Value="https://github.com/TungDao1102/FingerprintAgent" />
@@ -148,23 +167,33 @@
       <Custom Action="StopServiceOnRollback" After="InstallFiles"><![CDATA[NOT Installed]]></Custom>
       <Custom Action="StartServiceOnRollback" After="StopServiceOnRollback"><![CDATA[Installed AND NOT REINSTALL]]></Custom>
 
+      <!-- 7c: archive the MSI log into [PROGRAMDATAFOLDER]\Logs (CR: log consolidation).
+           Rollback copy runs inside the rollback script so FAILED installs leave the
+           diagnostic log next to agent.log instead of only in %TEMP%; the Type-51 setter
+           feeds MsiLogFileLocation to the deferred CA (cannot read session properties).
+           Success copy runs after InstallFinalize on install/upgrade; uninstall skipped
+           (NOT REMOVE) per D-29 log preservation. -->
+      <Custom Action="SetArchiveInstallLogRollbackData" Before="InstallValidate" />
+      <Custom Action="ArchiveInstallLogOnRollback" After="StartServiceOnRollback" />
+      <Custom Action="ArchiveInstallLog" After="InstallFinalize"><![CDATA[NOT REMOVE]]></Custom>
+
       <!-- 8. Commit (standard MSI) -->
     </InstallExecuteSequence>
 
     <!-- Rollback compensations live in the single InstallExecuteSequence above
          (entries 7b) — see CR-04 / WARN-10 notes there. -->
 
-    <!-- UI sequence for Vietnamese error dialog display during interactive install -->
+    <!-- UI sequence (DetectInstallType mirrors the execute-sequence entry for interactive installs) -->
     <InstallUISequence>
       <Custom Action="DetectInstallType" Before="AppSearch"><![CDATA[NOT Installed]]></Custom>
       <!--
-        CR-07 follow-up: automatic pre-ExitDialog display of VcRedistErrorDialog was
-        removed because <Show> with Before/After=ExitDialog is rejected by light — ExitDialog
-        is a special termination action (negative sequence number) and may not be used as
-        an anchor. The conditional display is now owned by a custom action that checks
-        VcRedistMissingDialog and calls MsiProcessMessage (DTF Session.Message). For v1,
-        the dialog is defined (DialogRef in <UI>) and ships in the MSI but is not
-        auto-shown; the CA-driven path is a follow-up.
+        CR-07 follow-up (implemented): <Show> of VcRedistErrorDialog before ExitDialog is
+        impossible (light rejects ExitDialog as an anchor — negative sequence number), and
+        authored dialogs cannot be shown from the execute sequence anyway. The Vietnamese
+        notice is therefore rendered by the CheckVcRedist CA itself via Session.Message
+        (MsiProcessMessage), with text sourced from the VcRedistErrorTitleText /
+        VcRedistErrorBodyText properties above. The authored VcRedistErrorDialog remains
+        in the binary (DialogRef in <UI>) for a future full-dialog UI-sequence flow.
       -->
     </InstallUISequence>
 

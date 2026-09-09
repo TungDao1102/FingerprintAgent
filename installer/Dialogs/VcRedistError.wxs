@@ -4,8 +4,10 @@
 
   TRIGGER
     CheckVcRedist CA sets session property `VcRedistMissingDialog = "1"` when VC++ x86
-    is not detected. The InstallUISequence reads this property to decide whether to
-    show this dialog before rolling back the install.
+    is not detected. Authored dialogs cannot be displayed from the execute sequence, so
+    the CA shows the same loc text via Session.Message instead (CR-07 follow-up — text
+    from the VcRedistErrorTitleText / VcRedistErrorBodyText properties). This authored
+    dialog ships in the MSI for a future UI-sequence display path.
 
   CONTENT (per D-11)
     Title: Thiếu Microsoft Visual C++ Redistributable (x86)
@@ -20,11 +22,9 @@
   <Fragment>
 
     <!--
-      Custom localizable strings injected into the MSI string table. The actual values
-      are sourced from the CustomAction DLL's embedded VietnameseStrings.resx at runtime
-      (via CustomAction session.Log), so we keep this dialog simple — title + body as
-      plain text. For a richer dialog, the VietnameseStrings resource values would be
-      read via session.Message in a deferred CA. For v1, plain text dialog is acceptable.
+      Strings come from WixUI_Minimal.vi-VN.wxl (VcRedistErrorTitle / VcRedistErrorBody);
+      the same loc strings feed the Session.Message notice via the VcRedistErrorTitleText /
+      VcRedistErrorBodyText properties declared in FingerprintAgent.Installer.wxs.
     -->
     <UI>
       <Dialog Id="VcRedistErrorDialog"
