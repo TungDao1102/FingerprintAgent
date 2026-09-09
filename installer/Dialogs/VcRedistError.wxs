@@ -4,10 +4,10 @@
 
   TRIGGER
     CheckVcRedist CA sets session property `VcRedistMissingDialog = "1"` when VC++ x86
-    is not detected. Authored dialogs cannot be displayed from the execute sequence, so
-    the CA shows the same loc text via Session.Message instead (CR-07 follow-up — text
-    from the VcRedistErrorTitleText / VcRedistErrorBodyText properties). This authored
-    dialog ships in the MSI for a future UI-sequence display path.
+    is not detected. Since the 2026-09-09 warn-only policy the CA only LOGS the
+    Vietnamese text (no Session.Message popup, install never fails) and the authored
+    dialog below remains unwired — it ships in the MSI for a future UI-sequence
+    display path.
 
   CONTENT (per D-11)
     Title: Thiếu Microsoft Visual C++ Redistributable (x86)

@@ -88,10 +88,22 @@ namespace FingerprintAgent.Installer
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// CustomAction entry point. Probes registry for VC++ x86 runtime. Returns
-        /// Failure if neither x86 nor Wow6432Node key has Installed=1 — after showing
-        /// the Vietnamese notice (CR-07) — causing MSI rollback. Returns Success on
-        /// registry access failure
+        /// CustomAction entry point. Probes registry for VC++ x86 runtime and LOGS a
+        /// warning when it is missing — the install continues either way.
+        ///
+        /// TEMPORARY policy (2026-09-09), superseding the D-09 hard gate: the original
+        /// "fail the install when missing" behavior assumed all four vendor SDKs link
+        /// the VC++ CRT. An import-table audit of the SDKs actually shipped
+        /// (lib/ZkTeco/libzkfp.dll, libzkfpcsharp.dll) found only kernel32/user32
+        /// imports — pure Win32, no vcruntime140/msvcp140 dependency — so a machine
+        /// lacking the x86 redist (e.g. an x64 box with only vc_redist.x64) was being
+        /// blocked for nothing. The single x86 MSI now installs on both 32-bit and
+        /// 64-bit Windows regardless of VC++ presence. A /MD-linked vendor SDK
+        /// (possible for SecuGen/DigitalPersona/Futronic) surfaces at runtime as
+        /// DllNotFoundException → SCANNER_NOT_CONNECTED + agent.log entry; the fix for
+        /// operators stays the same (install vc_redist.x86.exe). If such a vendor
+        /// ships, revisit a Burn bootstrapper bundling vc_redist.x86.
+        /// Always returns Success
         /// (fail-open: better to install and let runtime fail than to refuse on transient
         /// registry permissions).
         /// </summary>
@@ -108,10 +120,10 @@ namespace FingerprintAgent.Installer
                     return ActionResult.Success;
                 }
 
-                session.Log(LogPrefix + "VC++ x86 runtime NOT installed; showing Vietnamese notice, then rolling back");
+                session.Log(LogPrefix + "WARNING: VC++ x86 runtime NOT installed — install continues (warn-only policy)");
                 session["VcRedistMissingDialog"] = "1";
-                ShowVcRedistMissingNotice(session);
-                return ActionResult.Failure;
+                LogVcRedistWarning(session);
+                return ActionResult.Success;
             }
             catch (Exception ex)
             {
@@ -122,13 +134,23 @@ namespace FingerprintAgent.Installer
             }
         }
 
+        // Warn-only since 2026-09-09: log replaces the Session.Message popup (rationale in CheckVcRedist doc).
+        private static void LogVcRedistWarning(Session session)
+        {
+            string text = BuildVcRedistMessageText(
+                session[VcRedistErrorTitleProperty],
+                session[VcRedistErrorBodyProperty]);
+            if (!string.IsNullOrEmpty(text))
+            {
+                session.Log(LogPrefix + "NOTICE: " + text);
+            }
+        }
+
         /// <summary>
         /// CR-07 follow-up: renders the Vietnamese missing-runtime notice through
-        /// Session.Message (MsiProcessMessage). Authored MSI dialogs cannot be displayed
-        /// from the execute sequence, so the same localized text as VcRedistErrorDialog
-        /// is shown in a plain message box instead of the generic "fatal error" dialog.
-        /// No-op when the loc-driven text properties are absent — the caller still
-        /// returns Failure so the install rolls back.
+        /// Session.Message (MsiProcessMessage). NOT called by CheckVcRedist since the
+        /// 2026-09-09 warn-only policy — kept for the testable-core contract and a
+        /// possible future re-enable (Burn / UI-sequence dialog).
         /// </summary>
         internal static void ShowVcRedistMissingNotice(Session session)
         {

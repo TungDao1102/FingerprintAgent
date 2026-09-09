@@ -67,9 +67,9 @@
 
     <!--
       CR-07 follow-up (implemented): text for the Vietnamese missing-VC++ notice that
-      CheckVcRedist renders via Session.Message (MsiProcessMessage) from the execute
-      sequence — authored dialogs cannot be displayed there. Sourced from the same loc
-      strings as VcRedistErrorDialog so the .wxl stays the single text source.
+      CheckVcRedist writes to the MSI log (warn-only since 2026-09-09 — no Session.Message
+      popup, install never fails). Sourced from the same loc strings as VcRedistErrorDialog
+      so the .wxl stays the single text source.
     -->
     <Property Id="VcRedistErrorTitleText" Value="!(loc.VcRedistErrorTitle)" />
     <Property Id="VcRedistErrorBodyText" Value="!(loc.VcRedistErrorBody)" />

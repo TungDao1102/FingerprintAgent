@@ -17,7 +17,8 @@
     - ArchiveInstallLog        Schedule: after InstallFinalize (success) + rollback (log copy to ProgramData)
 
   RETURN VALUES
-    CheckVcRedist / ProbeHealthAfterInstall: Failure on rollback
+    CheckVcRedist: always Success — warn-only since 2026-09-09 (missing VC++ x86 is logged, install continues)
+    ProbeHealthAfterInstall: Failure on rollback
     DetectInstallType / SeedProgramDataConfig: Failure halts install (writes log via session.Log)
     StopRunningService: always Success (failure logged but doesn't block)
     SetDelayedAutoStart: always Success (failure degrades to immediate auto-start, logged)
@@ -42,7 +43,14 @@
                   Execute="immediate"
                   Return="check" />
 
-    <!-- CheckVcRedist: registry probe; shows the Vietnamese notice (Session.Message) and fails the install if VC++ x86 is missing -->
+    <!--
+      CheckVcRedist: registry probe for VC++ x86. Warn-only since 2026-09-09: when the
+      runtime is missing it logs the Vietnamese text and continues — the install is NOT
+      blocked. Rationale: import-table audit showed the shipped ZKTeco SDK DLLs are pure
+      Win32 (no vcruntime140/msvcp140), so a VC-less machine (e.g. x64 with only the x64
+      redist) was being blocked for nothing; the one x86 MSI now targets both 32-bit and
+      64-bit Windows. A /MD-linked vendor SDK would fail at load time, not install time.
+    -->
     <CustomAction Id="CheckVcRedist"
                   BinaryKey="CustomActionsCA"
                   DllEntry="CheckVcRedist"
