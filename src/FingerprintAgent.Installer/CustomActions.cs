@@ -10,6 +10,8 @@ using Newtonsoft.Json.Linq;
 using CustomActionAttribute = WixToolset.Dtf.WindowsInstaller.CustomActionAttribute;
 using Session = WixToolset.Dtf.WindowsInstaller.Session;
 using ActionResult = WixToolset.Dtf.WindowsInstaller.ActionResult;
+using Record = WixToolset.Dtf.WindowsInstaller.Record;
+using InstallMessage = WixToolset.Dtf.WindowsInstaller.InstallMessage;
 
 namespace FingerprintAgent.Installer
 {
@@ -53,14 +55,43 @@ namespace FingerprintAgent.Installer
         // D-38: standard MSI property this CustomAction populates to drive success-dialog selection.
         internal const string InstallTypeProperty = "InstallType";
 
+        // CR-07 follow-up: loc-driven Property-table entries (<Property Id="..."> in
+        // FingerprintAgent.Installer.wxs) holding the Vietnamese notice text. The .wxl
+        // stays the single text source; the CA only renders it.
+        internal const string VcRedistErrorTitleProperty = "VcRedistErrorTitleText";
+        internal const string VcRedistErrorBodyProperty = "VcRedistErrorBodyText";
+
+        // Win32 message-box style for the notice: INSTALLMESSAGE_USER + MB_ICONWARNING
+        // (0x30) + MB_SETFOREGROUND (0x10000); MB_OK (0x0) is the default when no button
+        // bits are set. MsiProcessMessage ORs message-box flags into the message type.
+        // MB_SETFOREGROUND has no DTF enum wrapper, hence the raw flag.
+        private const int MbIconWarning = 0x00000030;
+        private const int MbSetForeground = 0x00010000;
+        internal static readonly InstallMessage VcRedistUserMessageType =
+            (InstallMessage)((int)InstallMessage.User | MbIconWarning | MbSetForeground);
+
+        // MsiLogFileLocation: standard MSI property holding the active log path when
+        // logging is enabled (MsiLogging property or msiexec /l). Read by ArchiveInstallLog.
+        internal const string MsiLogFileLocationProperty = "MsiLogFileLocation";
+
+        // Public MSI property (FingerprintAgent.Installer.wxs) holding the ProgramData root
+        // that already hosts the runtime agent.log — install logs consolidate next to it.
+        internal const string ProgramDataFolderProperty = "PROGRAMDATAFOLDER";
+
+        // CustomActionData keys fed to ArchiveInstallLogOnRollback by its Type-51 setter
+        // (deferred CAs cannot read session properties directly).
+        internal const string MsiLogSourceKey = "MsiLogSource";
+        internal const string LogTargetDirKey = "LogTargetDir";
+
         // -----------------------------------------------------------------------
         // CheckVcRedist — VC++ x86 runtime detection (D-09/D-10/D-12)
         // -----------------------------------------------------------------------
 
         /// <summary>
         /// CustomAction entry point. Probes registry for VC++ x86 runtime. Returns
-        /// Failure if neither x86 nor Wow6432Node key has Installed=1 (causes MSI rollback
-        /// + triggers Vietnamese error dialog). Returns Success on registry access failure
+        /// Failure if neither x86 nor Wow6432Node key has Installed=1 — after showing
+        /// the Vietnamese notice (CR-07) — causing MSI rollback. Returns Success on
+        /// registry access failure
         /// (fail-open: better to install and let runtime fail than to refuse on transient
         /// registry permissions).
         /// </summary>
@@ -77,8 +108,9 @@ namespace FingerprintAgent.Installer
                     return ActionResult.Success;
                 }
 
-                session.Log(LogPrefix + "VC++ x86 runtime NOT installed; install will roll back with Vietnamese dialog");
+                session.Log(LogPrefix + "VC++ x86 runtime NOT installed; showing Vietnamese notice, then rolling back");
                 session["VcRedistMissingDialog"] = "1";
+                ShowVcRedistMissingNotice(session);
                 return ActionResult.Failure;
             }
             catch (Exception ex)
@@ -87,6 +119,166 @@ namespace FingerprintAgent.Installer
                 // The runtime will surface a clear error if VC++ really is missing.
                 session.Log(LogPrefix + "VC++ detection failed (fail-open): " + ex.Message);
                 return ActionResult.Success;
+            }
+        }
+
+        /// <summary>
+        /// CR-07 follow-up: renders the Vietnamese missing-runtime notice through
+        /// Session.Message (MsiProcessMessage). Authored MSI dialogs cannot be displayed
+        /// from the execute sequence, so the same localized text as VcRedistErrorDialog
+        /// is shown in a plain message box instead of the generic "fatal error" dialog.
+        /// No-op when the loc-driven text properties are absent — the caller still
+        /// returns Failure so the install rolls back.
+        /// </summary>
+        internal static void ShowVcRedistMissingNotice(Session session)
+        {
+            ShowVcRedistMissingNotice(
+                session[VcRedistErrorTitleProperty],
+                session[VcRedistErrorBodyProperty],
+                message => session.Log(message),
+                (type, record) => session.Message(type, record));
+        }
+
+        /// <summary>
+        /// Testable core. The NOTICE log line is written unconditionally — silent /qn
+        /// installs suppress the message box, so the MSI log is the only trace of the
+        /// Vietnamese reason there.
+        /// </summary>
+        internal static void ShowVcRedistMissingNotice(
+            string title,
+            string body,
+            Action<string> logSink,
+            Action<InstallMessage, Record> messageSink)
+        {
+            string text = BuildVcRedistMessageText(title, body);
+            if (string.IsNullOrEmpty(text))
+            {
+                logSink(LogPrefix + "VcRedistError text properties empty; skipping notice (install still fails)");
+                return;
+            }
+
+            logSink(LogPrefix + "NOTICE: " + text);
+            using (Record record = new Record(0))
+            {
+                record[0] = text;
+                messageSink(VcRedistUserMessageType, record);
+            }
+        }
+
+        /// <summary>
+        /// Pure logic helper. Combines the localized title/body into message-box text and
+        /// converts the MSI Text-control line-break markers ([BR]) to CRLF — inside a
+        /// Session.Message formatted field, unconverted "[BR]" is parsed as a property
+        /// reference and swallowed, losing the line structure.
+        /// </summary>
+        internal static string BuildVcRedistMessageText(string title, string body)
+        {
+            string normalizedBody = (body ?? string.Empty).Replace("[BR]", "\r\n");
+            if (string.IsNullOrEmpty(title))
+            {
+                return normalizedBody;
+            }
+
+            if (string.IsNullOrEmpty(normalizedBody))
+            {
+                return title;
+            }
+
+            return title + "\r\n\r\n" + normalizedBody;
+        }
+
+        // -----------------------------------------------------------------------
+        // ArchiveInstallLog — copy the active MSI log into ProgramData\Logs
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// CustomAction entry point. Copies the active MSI log (MsiLogFileLocation) into
+        /// [PROGRAMDATAFOLDER]\Logs\install-yyyyMMdd-HHmmss.log so install diagnostics sit
+        /// next to agent.log. Scheduled both IMMEDIATE after InstallFinalize (success path,
+        /// reads session properties) and as Execute="rollback" (failure path, reads
+        /// CustomActionData fed by SetArchiveInstallLogRollbackData — deferred CAs cannot
+        /// read session properties directly). Always Success: archiving is best-effort
+        /// support tooling and must never fail an install or a rollback.
+        /// </summary>
+        [CustomAction]
+        public static ActionResult ArchiveInstallLog(Session session)
+        {
+            try
+            {
+                string sourceFile;
+                string targetDirectory;
+                if (session.CustomActionData != null && session.CustomActionData.Count > 0)
+                {
+                    sourceFile = session.CustomActionData.ContainsKey(MsiLogSourceKey)
+                        ? session.CustomActionData[MsiLogSourceKey]
+                        : null;
+                    targetDirectory = session.CustomActionData.ContainsKey(LogTargetDirKey)
+                        ? session.CustomActionData[LogTargetDirKey]
+                        : null;
+                }
+                else
+                {
+                    sourceFile = session[MsiLogFileLocationProperty];
+                    targetDirectory = Path.Combine(session[ProgramDataFolderProperty] ?? string.Empty, "Logs");
+                }
+
+                if (string.IsNullOrEmpty(targetDirectory))
+                {
+                    session.Log(LogPrefix + "Install log archive skipped (no target directory property)");
+                    return ActionResult.Success;
+                }
+
+                CopyInstallLogFile(
+                    sourceFile,
+                    Path.Combine(targetDirectory, BuildInstallLogFileName(DateTime.Now)),
+                    message => session.Log(message));
+            }
+            catch (Exception ex)
+            {
+                session.Log(LogPrefix + "Install log archive failed (best-effort): " + ex.Message);
+            }
+
+            return ActionResult.Success;
+        }
+
+        /// <summary>
+        /// Pure logic helper. Local-time stamp so hospital IT can correlate the file name
+        /// with wall-clock events.
+        /// </summary>
+        internal static string BuildInstallLogFileName(DateTime timestamp)
+        {
+            return "install-" + timestamp.ToString("yyyyMMdd-HHmmss") + ".log";
+        }
+
+        /// <summary>
+        /// Pure-ish core (filesystem only). Copies the MSI log snapshot to targetFile,
+        /// creating the target directory when missing. Snapshot semantics: MSI keeps
+        /// writing the %TEMP% original after the copy. Every failure path logs via
+        /// logSink and returns instead of throwing — archiving must never break an
+        /// install or a rollback.
+        /// </summary>
+        internal static void CopyInstallLogFile(string sourceFile, string targetFile, Action<string> logSink)
+        {
+            if (string.IsNullOrEmpty(sourceFile) || !File.Exists(sourceFile))
+            {
+                logSink(LogPrefix + "Install log archive skipped (no active MSI log at '" + (sourceFile ?? "<null>") + "')");
+                return;
+            }
+
+            try
+            {
+                string targetDirectory = Path.GetDirectoryName(targetFile);
+                if (!string.IsNullOrEmpty(targetDirectory))
+                {
+                    Directory.CreateDirectory(targetDirectory);
+                }
+
+                File.Copy(sourceFile, targetFile, overwrite: true);
+                logSink(LogPrefix + "Install log archived to " + targetFile);
+            }
+            catch (Exception ex)
+            {
+                logSink(LogPrefix + "Install log archive failed (best-effort): " + ex.Message);
             }
         }
 
