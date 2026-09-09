@@ -74,27 +74,9 @@ jobs:
 
       # Install the MSI silently. WiX /qn mode skips all UI (D-08).
       # /l*v install.log gives a verbose log we can inspect on failure.
-      # CheckVcRedist custom action hard-fails the install when the VC++ x86
-      # runtime is absent (D-09 — deliberate for hospital workstations). Clean
-      # runners don't guarantee it, so make the condition true beforehand.
-      # Same registry probe as CustomActions.IsVcRedistInstalled.
-      - name: Ensure VC++ x86 redistributable
-        shell: pwsh
-        run: |
-          $keys = @(
-            'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86',
-            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86'
-          )
-          foreach ($key in $keys) {
-            $v = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).Installed
-            if ($v -eq 1) { Write-Host "VC++ x86 already present at $key"; exit 0 }
-          }
-          Write-Host 'VC++ x86 not found - installing silently...'
-          Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x86.exe' -OutFile "$env:TEMP\vc_redist.x86.exe"
-          $p = Start-Process -FilePath "$env:TEMP\vc_redist.x86.exe" -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
-          Write-Host "vc_redist.x86 exit code: $($p.ExitCode)"
-          exit $p.ExitCode
-
+      # No VC++ pre-install needed: CheckVcRedist is warn-only since 2026-09-09
+      # (import-table audit showed the shipped ZKTeco SDK DLLs need no VC++ runtime),
+      # so the install proceeds on clean runners regardless of the redist.
       - name: Install MSI (silent)
         shell: pwsh
         run: |

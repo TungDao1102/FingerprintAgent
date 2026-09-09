@@ -34,15 +34,23 @@ Agent hỗ trợ các hãng máy quét sau (cần cài driver từ hãng trướ
 Lưu ý: máy quét **chưa** cắm vào thì cài FingerprintAgent vẫn bình thường —
 agent sẽ chờ và tự động phát hiện trong vòng 30 giây sau khi cắm.
 
-### Tải xuống Visual C++ Redistributable (nếu thiếu)
+### Visual C++ Redistributable (không bắt buộc)
 
-Nếu MSI thông báo thiếu VC++, tải từ đường link chính thức của Microsoft:
+Từ phiên bản hiện tại, MSI **không còn chặn cài đặt** khi thiếu Visual C++
+x86 — máy thiếu VC++ (ví dụ máy 64-bit chỉ có VC++ x64) vẫn cài bình
+thường. Bản ghi cảnh báo được ghi vào log cài đặt.
+
+VC++ x86 chỉ cần thiết với một số SDK hãng build kiểu dynamic CRT
+(SecuGen, DigitalPersona, Futronic). SDK ZKTeco (đã kiểm tra import
+table) không phụ thuộc VC++ runtime. Nếu sau khi cắm máy quét, agent log
+ghi lỗi dạng `DllNotFoundException: vcruntime140.dll`, hãy tải và cài từ
+đường link chính thức của Microsoft:
 
 ```
 https://aka.ms/vs/17/release/vc_redist.x86.exe
 ```
 
-Cài xong VC++ rồi chạy lại MSI FingerprintAgent.
+Cài xong khởi động lại service FingerprintAgent.
 
 ---
 
@@ -105,8 +113,8 @@ echo %ERRORLEVEL%
 ```
 
 - `0` — cài đặt thành công.
-- `1603` — lỗi nghiêm trọng, xem `install.log` để biết chi tiết (thường là
-  thiếu VC++ hoặc service đã được cài từ phiên bản cũ hơn không tương thích).
+- `1603` — lỗi nghiêm trọng, xem `install.log` để biết chi tiết (thường do
+  service cũ chưa gỡ hoặc cổng 5043 bị chiếm).
 
 ### Gỡ cài đặt im lặng
 
@@ -114,25 +122,17 @@ echo %ERRORLEVEL%
 msiexec /qn /x FingerprintAgent-Setup.msi /l*v uninstall.log
 ```
 
-### Lưu ý: hộp thoại tiếng Việt chỉ hiện ở chế độ tương tác
+### Lưu ý: cảnh báo VC++ chỉ ghi vào log
 
-Hộp thoại cảnh báo tiếng Việt khi thiếu Visual C++ (x86) chỉ hiện khi cài
-đặt tương tác (chạy MSI bằng cách nhấp đúp). Khi triển khai với `/qn`, msiexec
-bỏ qua toàn bộ chuỗi UI, không hiện hộp thoại — install sẽ thất bại ngay với
-mã thoát 1603 và ghi `VcRedistMissingDialog=1` vào log. Trước khi triển khai
-silent cho máy mới, hãy:
+Khi máy thiếu Visual C++ (x86), MSI **không chặn cài đặt** — lý do được ghi
+vào `install.log` (dòng `WARNING: VC++ x86 runtime NOT installed`), cả ở
+chế độ tương tác lẫn `/qn`. Cài đặt silent cho máy mới có thể chạy trực
+tiếp; nếu workstation dùng scanner SecuGen/DigitalPersona/Futronic, nên
+cài VC++ x86 trước bằng GPO/SCCM để tránh lỗi load SDK lúc chạy:
 
-1. Cài VC++ x86 trước bằng GPO/SCCM:
-   ```cmd
-   vc_redist.x86.exe /quiet /norestart
-   ```
-2. Hoặc dùng script PowerShell kiểm tra registry trước khi gọi `msiexec`:
-   ```powershell
-   if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86')) {
-       Write-Error 'VC++ x86 missing — aborting'
-       exit 1
-   }
-   ```
+```cmd
+vc_redist.x86.exe /quiet /norestart
+```
 
 ---
 
@@ -326,16 +326,22 @@ USB nhưng agent không nhận.
    quét rồi đợi ít nhất 30 giây.
 4. **Xem EventLog** để biết lý do cụ thể.
 
-### 7.3 Lỗi "VC++ missing" khi cài
+### 7.3 Cảnh báo "VC++ x86 runtime NOT installed" trong log cài đặt
 
-**Triệu chứng:** MSI thoát ngay với hộp thoại tiếng Việt báo thiếu VC++.
+**Triệu chứng:** `install.log` chứa dòng
+`WARNING: VC++ x86 runtime NOT installed — install continues`.
+Đây **không phải lỗi** — MSI vẫn cài thành công.
+
+**Khi nào cần xử lý:** chỉ khi scanner thuộc loại SDK phụ thuộc VC++
+(SecuGen, DigitalPersona, Futronic) và agent log ghi
+`DllNotFoundException: vcruntime140.dll` / `msvcp140.dll` khi load SDK.
 
 **Cách xử lý:**
 
 1. Tải `vc_redist.x86.exe` từ
    `https://aka.ms/vs/17/release/vc_redist.x86.exe`.
 2. Cài đặt (cần quyền admin).
-3. Chạy lại MSI FingerprintAgent.
+3. Khởi động lại service FingerprintAgent (không cần cài lại MSI).
 
 ### 7.4 Capture trả về SCANNER_NOT_CONNECTED
 
