@@ -497,6 +497,95 @@ namespace FingerprintAgent.Installer
         }
 
         // -----------------------------------------------------------------------
+        // SetDelayedAutoStart — D-32a delayed auto-start via CA (Error 1409 fix)
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// CustomAction entry point (deferred, Impersonate=no). Flips the freshly created
+        /// service from plain auto-start to delayed auto-start (~2 min after boot) via
+        /// sc.exe config.
+        ///
+        /// WHY a CA instead of a RegistryValue: MSI must never author values inside the
+        /// SCM-owned service key (SYSTEM\CurrentControlSet\Services\FingerprintAgent).
+        /// On uninstall DeleteServices (seq 2000) destroys that key before
+        /// RemoveRegistryValues (seq 2600) tries to remove the value → MSI Error 1409
+        /// ("Could not read security information for key ... Verify that you have
+        /// sufficient access to that key") → 1603 rollback. DeleteService deletes the
+        /// whole key, so nothing needs cleanup on uninstall.
+        ///
+        /// Best-effort: always returns Success; failure only degrades to immediate
+        /// auto-start (loudly logged in the MSI log). InstallServices must have run
+        /// already (sequence: After="InstallServices", condition NOT REMOVE).
+        /// </summary>
+        [CustomAction]
+        public static ActionResult SetDelayedAutoStart(Session session)
+        {
+            session.Log(LogPrefix + "Setting delayed auto-start for service " + ServiceName + "...");
+            try
+            {
+                var psi = new ProcessStartInfo
+                {
+                    FileName = "sc.exe",
+                    Arguments = BuildDelayedAutoStartArguments(ServiceName),
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true
+                };
+                using (var p = Process.Start(psi))
+                {
+                    if (p == null)
+                    {
+                        session.Log(LogPrefix + "SetDelayedAutoStart: sc.exe could not be launched (not on PATH?)");
+                        return ActionResult.Success;
+                    }
+                    if (!p.WaitForExit(30000))
+                    {
+                        session.Log(LogPrefix + "SetDelayedAutoStart: sc.exe config timed out after 30s; service keeps immediate auto-start");
+                        try
+                        {
+                            p.Kill();
+                        }
+                        catch (Exception killEx)
+                        {
+                            session.Log(LogPrefix + "SetDelayedAutoStart: sc.exe Kill failed: " + killEx.Message);
+                        }
+                    }
+                    else
+                    {
+                        string output = p.StandardOutput.ReadToEnd();
+                        if (p.ExitCode != 0)
+                        {
+                            session.Log(LogPrefix + "SetDelayedAutoStart: sc.exe config exited with code " + p.ExitCode
+                                + "; service keeps immediate auto-start. Output: " + output);
+                        }
+                        else
+                        {
+                            session.Log(LogPrefix + "SetDelayedAutoStart: service start type set to delayed-auto");
+                        }
+                    }
+                }
+                return ActionResult.Success;
+            }
+            catch (Exception ex)
+            {
+                session.Log(LogPrefix + "SetDelayedAutoStart failed: " + ex.Message + " (continuing; service keeps immediate auto-start)");
+                return ActionResult.Success;
+            }
+        }
+
+        /// <summary>
+        /// Pure logic helper. Builds the sc.exe argument string that flips a service from
+        /// plain auto-start to "automatic (delayed start)". sc.exe requires a space after
+        /// 'start=' — 'start=delayed-auto' is silently misparsed.
+        /// Exposed as internal static so tests can verify the contract.
+        /// </summary>
+        internal static string BuildDelayedAutoStartArguments(string serviceName)
+        {
+            return "config " + serviceName + " start= delayed-auto";
+        }
+
+        // -----------------------------------------------------------------------
         // Probe types
         // -----------------------------------------------------------------------
 
