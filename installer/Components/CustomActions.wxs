@@ -12,12 +12,14 @@
     - CheckVcRedist            Schedule: InstallExecuteSequence before InstallValidate (fail-fast)
     - StopRunningService       Schedule: InstallExecuteSequence before InstallFiles (upgrade only)
     - SeedProgramDataConfig    Schedule: InstallExecuteSequence after InstallFiles (write config)
+    - SetDelayedAutoStart      Schedule: InstallExecuteSequence after InstallServices (D-32a)
     - ProbeHealthAfterInstall  Schedule: InstallExecuteSequence after StartServices (validate)
 
   RETURN VALUES
     CheckVcRedist / ProbeHealthAfterInstall: Failure on rollback
     DetectInstallType / SeedProgramDataConfig: Failure halts install (writes log via session.Log)
     StopRunningService: always Success (failure logged but doesn't block)
+    SetDelayedAutoStart: always Success (failure degrades to immediate auto-start, logged)
 
   CustomActionData (passed to CAs)
     SeedProgramDataConfig receives:
@@ -70,6 +72,21 @@
                   Execute="deferred"
                   Impersonate="no"
                   Return="check" />
+
+    <!--
+      D-32a (Error 1409 fix): flips the freshly created service to delayed auto-start.
+      Must be deferred — it needs LocalSystem rights and the service created by
+      InstallServices (seq 5800) must already exist; sequenced After="InstallServices"
+      in FingerprintAgent.Installer.wxs with condition NOT REMOVE. No Type-51 data
+      setter required: the service name is the hard-coded ServiceName constant.
+      Return=ignore: failure only degrades to immediate auto-start (log-only).
+    -->
+    <CustomAction Id="SetDelayedAutoStart"
+                  BinaryKey="CustomActionsCA"
+                  DllEntry="SetDelayedAutoStart"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
 
     <!--
       C5 note: ProbeHealthAfterInstall stays IMMEDIATE (it writes session properties for the

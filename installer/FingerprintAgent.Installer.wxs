@@ -123,6 +123,13 @@
       <Custom Action="SetSeedProgramDataConfigData" Before="SeedProgramDataConfig"><![CDATA[NOT REMOVE]]></Custom>
       <Custom Action="SeedProgramDataConfig" After="InstallFiles"><![CDATA[NOT REMOVE]]></Custom>
 
+      <!-- 5b. SetDelayedAutoStart (D-32a, deferred): the service created by InstallServices
+           exists here — flip its start type to delayed-auto BEFORE StartServices starts it.
+           Skipped on uninstall (NOT REMOVE). The service key is SCM-owned: DeleteService
+           deletes the whole key, so uninstall needs no cleanup for this setting
+           (fixes MSI Error 1409 on uninstall — see CustomActions.cs SetDelayedAutoStart). -->
+      <Custom Action="SetDelayedAutoStart" After="InstallServices"><![CDATA[NOT REMOVE]]></Custom>
+
       <!-- 6. StartServices (WiX standard action — handled by ServiceControl Start attribute) -->
 
       <!-- 7. ProbeHealthAfterInstall — C5: after InstallFinalize so the service is truly up.

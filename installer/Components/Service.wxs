@@ -119,17 +119,17 @@
           Component in ProgramDataConfig.wxs (the canonical location). Removing the
           duplicate here prevents two registry entries for the same EventLog source.
 
-          D-32a: DelayedAutoStart. WiX 3.x <ServiceInstall> does NOT expose a
-          DelayedAutoStart attribute (it was added in WiX 4.x). The Windows-native
-          mechanism is a DWORD at
-          HKLM\SYSTEM\CurrentControlSet\Services\<Name>\DelayedAutoStart = 1.
-          Set it here so the service auto-starts ~2 minutes after boot instead of
-          blocking boot on workstations that are slow to initialize the scanner SDK.
+          D-32a (revised — Error 1409 fix): delayed auto-start is NOT authored as a
+          RegistryValue here anymore. This key is owned by the SCM: DeleteService
+          (DeleteServices action, seq 2000) removes the whole key during uninstall
+          BEFORE RemoveRegistryValues (seq 2600) gets to delete the value — MSI then
+          failed with Error 1409 ("Could not read security information for key
+          SYSTEM\CurrentControlSet\Services\FingerprintAgent") and rolled the uninstall
+          back. The setting is now applied by the deferred SetDelayedAutoStart CA
+          (CustomActions.cs), sequenced After="InstallServices" with condition
+          NOT REMOVE in FingerprintAgent.Installer.wxs. Never re-add MSI registry
+          authoring inside SYSTEM\CurrentControlSet\Services\<Name>.
         -->
-        <RegistryKey Root="HKLM"
-                     Key="SYSTEM\CurrentControlSet\Services\FingerprintAgent">
-          <RegistryValue Name="DelayedAutoStart" Type="integer" Value="1" />
-        </RegistryKey>
 
         <!-- D-30: graceful stop on upgrade/uninstall. WiX 3.x <ServiceControl> only exposes
              Wait="yes|no"; the OS-level service stop timeout (default 30s) is what
