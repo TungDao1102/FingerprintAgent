@@ -20,8 +20,9 @@
 
     New pattern:
       1. Install the Component unconditionally so it has presence in the package.
-      2. Use <util:RemoveFolderEx Property="REMOVE_LOGS" Directory="..."/> which
-         schedules a deferred CA that ONLY acts when REMOVE_LOGS is non-empty.
+      2. Use <util:RemoveFolderEx Property="REMOVE_LOGS_PATH"/> where REMOVE_LOGS_PATH
+          is a PATH property (the CA removes whatever full path that property holds),
+          set only when the REMOVE_LOGS flag is passed on an already-installed product.
       3. RemoveFolderEx recursively removes the directory (the original RemoveFolder
          only removes if empty, which it never is — logs are present).
 -->
@@ -31,22 +32,33 @@
   <Fragment>
 
     <!--
-      Component that schedules removal of the Logs directory when REMOVE_LOGS=1.
-      The Component is always installed; util:RemoveFolderEx checks the property
-      at execution time and only acts when REMOVE_LOGS is set (which only happens
-      during uninstall when the operator explicitly passed REMOVE_LOGS=1).
+      D-29 escape hatch. util:RemoveFolderEx contract (WixCA!WixRemoveFoldersEx,
+      immediate CA auto-scheduled at sequence 799): the Property attribute names the
+      property whose VALUE is the full path of the folder to remove — it is NOT an
+      on/off flag. An empty value makes the CA fail the row with E_INVALIDARG
+      (0x80070057), which the auto-generated Return="ignore" swallows; the benign
+      "WixRemoveFoldersEx: Missing folder property" line in every verbose log is that
+      error path and is unrelated to this feature's health.
+
+      So the path lives in its own property, REMOVE_LOGS_PATH, authored above:
+        - Condition "REMOVE_LOGS AND Installed": uninstall/repair only — a fresh
+          install must not delete an existing installation's logs even if someone
+          passes REMOVE_LOGS=1 to msiexec /i.
+        - [LOGS_DIR_PLACEHOLDER] is NOT usable as the value: directory properties
+          only resolve at CostFinalize (1000), but the removal CA runs at 799 —
+          hence the [PROGRAMDATAFOLDER] Property-table value (D-04, hardcoded,
+          no trailing backslash) plus the explicit '\'.
     -->
+    <SetProperty Id="REMOVE_LOGS_PATH"
+                 Value="[PROGRAMDATAFOLDER]\Logs"
+                 Sequence="execute"
+                 Before="WixRemoveFoldersEx"><![CDATA[REMOVE_LOGS AND Installed]]></SetProperty>
+
     <Component Id="cmp_RemoveLogsOnUninstall"
                Guid="{A5B6C7D8-9E0F-1A2B-3C4D-5E6F7A8B9C0D}"
                Win64="no"
                Directory="LOGS_DIR_PLACEHOLDER">
-      <!--
-        WiX 3.x util:RemoveFolderEx has no Directory attribute; the target directory
-        is inferred from the parent Component's Directory attribute (added above).
-        Property="REMOVE_LOGS" makes the removal a no-op unless the operator passed
-        REMOVE_LOGS=1 on the msiexec command line.
-      -->
-      <util:RemoveFolderEx Property="REMOVE_LOGS" />
+      <util:RemoveFolderEx Property="REMOVE_LOGS_PATH" />
       <!--
         The component has no File/Registry child, so MSI keys it to its directory
         (LOGS_DIR_PLACEHOLDER). ICE18 requires that Directory/Component pair in
