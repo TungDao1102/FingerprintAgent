@@ -101,10 +101,16 @@ namespace FingerprintAgent.Adapters
             {
                 _capture.StartCapture();
             }
+            catch (DllNotFoundException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return CaptureResult.Fail("DRIVER_NOT_INSTALLED",
+                    "DigitalPersona: driver DLL could not be loaded — install the DigitalPersona driver");
+            }
             catch (Exception ex)
             {
                 _vendorErrorCode = MapException(ex);
-                return CaptureResult.Fail("CAPTURE_ERROR", $"DigitalPersona:{_vendorErrorCode}");
+                return CaptureResult.Fail(ToStandardErrorCode(_vendorErrorCode, "CAPTURE_ERROR"), $"DigitalPersona:{_vendorErrorCode}");
             }
 
             bool signaled;
@@ -146,7 +152,7 @@ namespace FingerprintAgent.Adapters
             if (!signaled || _capturedSample == null)
             {
                 _vendorErrorCode = _vendorErrorCode == "NONE" ? "CAPTURE_TIMEOUT" : _vendorErrorCode;
-                return CaptureResult.Fail("CAPTURE_TIMEOUT", $"DigitalPersona:{_vendorErrorCode}");
+                return CaptureResult.Fail(ToStandardErrorCode(_vendorErrorCode, "CAPTURE_TIMEOUT"), $"DigitalPersona:{_vendorErrorCode}");
             }
 
             // Convert sample to PNG
@@ -243,6 +249,24 @@ namespace FingerprintAgent.Adapters
                 return dpEx.ReturnCode.ToString();
             }
             return ex.GetType().Name;
+        }
+
+        /// <summary>
+        /// Per-adapter map step: DigitalPersona vendor strings → the capture handler's
+        /// standard codes. Unmapped codes fall back to the coarse code untouched.
+        /// </summary>
+        internal static string ToStandardErrorCode(string vendorErrorCode, string coarseCode)
+        {
+            switch (vendorErrorCode)
+            {
+                case "DLL_NOT_FOUND":
+                    return "DRIVER_NOT_INSTALLED";
+                case "DEVICE_NOT_FOUND":
+                case "DEVICE_NOT_CAPTURING":
+                    return "SCANNER_NOT_CONNECTED";
+                default:
+                    return coarseCode;
+            }
         }
 
         public void Dispose()

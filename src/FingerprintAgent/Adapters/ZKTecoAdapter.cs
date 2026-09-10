@@ -238,6 +238,13 @@ namespace FingerprintAgent.Adapters
             {
                 if (_handle == IntPtr.Zero || !_isConnected)
                 {
+                    // The adapter's own DLL_NOT_FOUND latch means the driver is missing —
+                    // a different fix (install driver) than replugging the scanner.
+                    if (_vendorErrorCode == "DLL_NOT_FOUND")
+                    {
+                        return CaptureResult.Fail("DRIVER_NOT_INSTALLED",
+                            "ZKTeco: libzkfp.dll could not be loaded — install the ZKTeco driver");
+                    }
                     _vendorErrorCode = "SCANNER_NOT_CONNECTED";
                     return CaptureResult.Fail("SCANNER_NOT_CONNECTED", "ZKTeco: scanner not initialized");
                 }
@@ -292,10 +299,10 @@ namespace FingerprintAgent.Adapters
                     int elapsedSec = (int)(stopwatch.ElapsedMilliseconds / 1000);
                     _vendorErrorCode = ErrorCodeToString(lastResult);
 
-                    bool isTimeout = stopwatch.ElapsedMilliseconds >= captureBudgetMs
-                                  || cancellationToken.IsCancellationRequested
-                                  || lastResult == ZkNativeHost.ZKFP_ERR_TIMEOUT;
-                    string code = isTimeout ? "CAPTURE_TIMEOUT" : "CAPTURE_FAILED";
+                    string code = ClassifyAcquireFailure(
+                        lastResult,
+                        stopwatch.ElapsedMilliseconds >= captureBudgetMs,
+                        cancellationToken.IsCancellationRequested);
                     return CaptureResult.Fail(code, ErrorCodeToUserMessage(lastResult, elapsedSec));
                 }
 
@@ -321,6 +328,18 @@ namespace FingerprintAgent.Adapters
                     Width = width,
                     Height = height
                 };
+            }
+            catch (DllNotFoundException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return CaptureResult.Fail("DRIVER_NOT_INSTALLED",
+                    "ZKTeco: libzkfp.dll could not be loaded — install the ZKTeco driver");
+            }
+            catch (BadImageFormatException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return CaptureResult.Fail("DRIVER_NOT_INSTALLED",
+                    "ZKTeco: libzkfp.dll architecture mismatch (x86/x64) — reinstall the ZKTeco driver");
             }
             catch (Exception ex)
             {
@@ -385,6 +404,34 @@ namespace FingerprintAgent.Adapters
             return _errorStrings.TryGetValue(errorCode, out string value)
                 ? value
                 : $"ERROR_UNKNOWN_{errorCode}";
+        }
+
+        /// <summary>
+        /// Per-adapter mapping step: raw ZKFP vendor code (+ retry-loop state) → the
+        /// capture handler's standard vocabulary. Connection-class SDK codes surface
+        /// as SCANNER_NOT_CONNECTED instead of a generic CAPTURE_FAILED; unmapped
+        /// codes are not forced.
+        /// </summary>
+        internal static string ClassifyAcquireFailure(int vendorResult, bool budgetExhausted, bool cancelRequested)
+        {
+            switch (vendorResult)
+            {
+                case ZkNativeHost.ZKFP_ERR_INITLIB:
+                case ZkNativeHost.ZKFP_ERR_INIT:
+                case ZkNativeHost.ZKFP_ERR_NO_DEVICE:
+                case ZkNativeHost.ZKFP_ERR_OPEN:
+                case ZkNativeHost.ZKFP_ERR_INVALID_HANDLE:
+                case ZkNativeHost.ZKFP_ERR_NOT_OPENED:
+                case ZkNativeHost.ZKFP_ERR_NOT_INIT:
+                    return "SCANNER_NOT_CONNECTED";
+            }
+
+            if (cancelRequested || budgetExhausted ||
+                vendorResult == ZkNativeHost.ZKFP_ERR_TIMEOUT ||
+                vendorResult == ZkNativeHost.ZKFP_ERR_CANCEL)
+                return "CAPTURE_TIMEOUT";
+
+            return "CAPTURE_FAILED";
         }
 
         /// <summary>

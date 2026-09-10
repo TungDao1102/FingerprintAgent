@@ -144,11 +144,17 @@ namespace FingerprintAgent.Api
             {
                 case "SCANNER_NOT_CONNECTED":
                     return (503, errorCode);
+                case "DRIVER_NOT_INSTALLED":
+                    return (503, errorCode);
                 case "CAPTURE_TIMEOUT":
                     return (504, errorCode);
                 case "INVALID_REQUEST":
                     return (400, errorCode);
                 case "CAPTURE_FAILED":
+                    return (500, errorCode);
+                case "CAPTURE_ERROR":
+                    return (500, errorCode);
+                case "CONVERSION_ERROR":
                     return (500, errorCode);
                 case "CONFIG_ERROR":
                     return (500, errorCode);

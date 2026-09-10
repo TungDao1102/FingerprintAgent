@@ -210,6 +210,90 @@ namespace FingerprintAgent.Tests.Api
         }
 
         [Fact]
+        public async Task CaptureHandler_Returns503_WhenScannerReturnsDriverNotInstalled()
+        {
+            var mock = new MockScannerAdapterWithSettableProperties
+            {
+                IsConnectedValue = true,
+                InitializeResult = true,
+                ScanResult = CaptureResult.Fail("DRIVER_NOT_INSTALLED", "Vendor driver missing"),
+                VendorErrorCodeValue = "ERROR_DLLLOAD_FAILED"
+            };
+            var handler = new CaptureHandler(null);
+
+            ResetContextReady();
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
+
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
+
+            var response = await GetResponseAsync(responseTask);
+            Assert.Equal(503, (int)response.StatusCode);
+
+            string json = await ReadResponseBodyAsync(response);
+            var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
+
+            Assert.False(captureResponse.IsSuccess);
+            Assert.Equal("DRIVER_NOT_INSTALLED", captureResponse.ErrorCode);
+        }
+
+        [Fact]
+        public async Task CaptureHandler_Returns500_WhenScannerReturnsCaptureError()
+        {
+            var mock = new MockScannerAdapterWithSettableProperties
+            {
+                IsConnectedValue = true,
+                InitializeResult = true,
+                ScanResult = CaptureResult.Fail("CAPTURE_ERROR", "Capture returned no image data"),
+                VendorErrorCodeValue = "ERROR_CAPTURE"
+            };
+            var handler = new CaptureHandler(null);
+
+            ResetContextReady();
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
+
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
+
+            var response = await GetResponseAsync(responseTask);
+            Assert.Equal(500, (int)response.StatusCode);
+
+            string json = await ReadResponseBodyAsync(response);
+            var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
+
+            Assert.False(captureResponse.IsSuccess);
+            Assert.Equal("CAPTURE_ERROR", captureResponse.ErrorCode);
+        }
+
+        [Fact]
+        public async Task CaptureHandler_Returns500_WhenScannerReturnsConversionError()
+        {
+            var mock = new MockScannerAdapterWithSettableProperties
+            {
+                IsConnectedValue = true,
+                InitializeResult = true,
+                ScanResult = CaptureResult.Fail("CONVERSION_ERROR", "DigitalPersona:ImageFormatError"),
+                VendorErrorCodeValue = "QUALITY_NOT_GOOD"
+            };
+            var handler = new CaptureHandler(null);
+
+            ResetContextReady();
+            var responseTask = SendHttpRequestAsync("{\"requestId\":\"test\"}");
+
+            await WaitForContextAsync(5000);
+            await handler.HandleAsync(_capturedContext, mock);
+
+            var response = await GetResponseAsync(responseTask);
+            Assert.Equal(500, (int)response.StatusCode);
+
+            string json = await ReadResponseBodyAsync(response);
+            var captureResponse = JsonConvert.DeserializeObject<CaptureResponse>(json);
+
+            Assert.False(captureResponse.IsSuccess);
+            Assert.Equal("CONVERSION_ERROR", captureResponse.ErrorCode);
+        }
+
+        [Fact]
         public async Task CaptureHandler_Returns400_WhenRequestHasMissingFields()
         {
             var mock = new MockScannerAdapterWithSettableProperties

@@ -64,6 +64,34 @@ namespace FingerprintAgent.Adapters
                 { 61,  "ERROR_UNSUPPORTED_DEV" }
             };
 
+        /// <summary>
+        /// Per-adapter map step: SecuGen SDK strings → the capture handler's standard
+        /// codes. Unmapped vendor strings fall back to the coarse code untouched.
+        /// </summary>
+        internal static string ToStandardErrorCode(string vendorErrorCode, string coarseCode)
+        {
+            switch (vendorErrorCode)
+            {
+                case "DLL_NOT_FOUND":
+                case "ERROR_DLLLOAD_FAILED":
+                case "ERROR_DLLLOAD_FAILED_DRV":
+                case "ERROR_DLLLOAD_FAILED_ALGO":
+                case "ERROR_DRVLOAD_FAILED":
+                    return "DRIVER_NOT_INSTALLED";
+                case "ERROR_DEVICE_NOT_FOUND":
+                    return "SCANNER_NOT_CONNECTED";
+                case "ERROR_TIME_OUT":
+                    return "CAPTURE_TIMEOUT";
+                default:
+                    return coarseCode;
+            }
+        }
+
+        protected override string StandardizeErrorCode(string coarseCode)
+        {
+            return ToStandardErrorCode(_vendorErrorCode, coarseCode);
+        }
+
         public override bool IsConnected => _isConnected;
         public override string DeviceId => _deviceId ?? "";
         public override string Model => _model ?? "SecuGen Device";
@@ -78,47 +106,58 @@ namespace FingerprintAgent.Adapters
                 (_fpm as IDisposable)?.Dispose();
                 _fpm = null;
             }
-            _fpm = new SGFingerPrintManager();
-            Int32 err = _fpm.Init(SGFPMDeviceName.DEV_AUTO);
-            if (err != 0)
+
+            Int32 err;
+            try
+            {
+                _fpm = new SGFingerPrintManager();
+                err = _fpm.Init(SGFPMDeviceName.DEV_AUTO);
+                if (err != 0)
+                {
+                    _fpm = null;
+                    _vendorErrorCode = MapError(err);
+                    return false;
+                }
+
+                err = _fpm.OpenDevice((Int32)SGFPMPortAddr.USB_AUTO_DETECT);
+                if (err != 0)
+                {
+                    _vendorErrorCode = MapError(err);
+                    return false;
+                }
+
+                Int32 deviceCount = 0;
+                _fpm.EnumerateDevice(ref deviceCount, null);
+                if (deviceCount == 0)
+                {
+                    _vendorErrorCode = MapError(55);
+                    return false;
+                }
+
+                SGDevInfo[] deviceList = new SGDevInfo[deviceCount];
+                _fpm.EnumerateDevice(ref deviceCount, deviceList);
+
+                if (deviceCount > 0)
+                {
+                    var info = deviceList[0];
+                    _deviceId = "SecuGen-" + info.DeviceSerialNumber;
+                    _model = info.DevName.TrimEnd('\0');
+                    _width = info.ImageWidth;
+                    _height = info.ImageHeight;
+                }
+                else
+                {
+                    _deviceId = "SecuGen-unknown";
+                    _model = "SecuGen Device";
+                    _width = 260;
+                    _height = 300;
+                }
+            }
+            catch (DllNotFoundException)
             {
                 _fpm = null;
-                _vendorErrorCode = MapError(err);
+                _vendorErrorCode = "DLL_NOT_FOUND";
                 return false;
-            }
-
-            err = _fpm.OpenDevice((Int32)SGFPMPortAddr.USB_AUTO_DETECT);
-            if (err != 0)
-            {
-                _vendorErrorCode = MapError(err);
-                return false;
-            }
-
-            Int32 deviceCount = 0;
-            _fpm.EnumerateDevice(ref deviceCount, null);
-            if (deviceCount == 0)
-            {
-                _vendorErrorCode = MapError(55);
-                return false;
-            }
-
-            SGDevInfo[] deviceList = new SGDevInfo[deviceCount];
-            _fpm.EnumerateDevice(ref deviceCount, deviceList);
-
-            if (deviceCount > 0)
-            {
-                var info = deviceList[0];
-                _deviceId = "SecuGen-" + info.DeviceSerialNumber;
-                _model = info.DevName.TrimEnd('\0');
-                _width = info.ImageWidth;
-                _height = info.ImageHeight;
-            }
-            else
-            {
-                _deviceId = "SecuGen-unknown";
-                _model = "SecuGen Device";
-                _width = 260;
-                _height = 300;
             }
 
             _isConnected = true;
@@ -133,7 +172,16 @@ namespace FingerprintAgent.Adapters
 
             byte[] buffer = new byte[_width * _height];
             Int32 quality = 80;
-            Int32 err = _fpm.GetImageEx(buffer, 5000, IntPtr.Zero, quality);
+            Int32 err;
+            try
+            {
+                err = _fpm.GetImageEx(buffer, 5000, IntPtr.Zero, quality);
+            }
+            catch (DllNotFoundException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return null;
+            }
             if (err != 0)
             {
                 _vendorErrorCode = MapError(err);

@@ -101,7 +101,17 @@ namespace FingerprintAgent.Adapters
             _vendorErrorCode = "NONE";
 
             byte[] rawBuffer = new byte[_imageWidth * _imageHeight];
-            bool ok = FutronicSDK.ftrScanGetImage(_device, 4, rawBuffer);
+            bool ok;
+            try
+            {
+                ok = FutronicSDK.ftrScanGetImage(_device, 4, rawBuffer);
+            }
+            catch (DllNotFoundException)
+            {
+                _vendorErrorCode = "DLL_NOT_FOUND";
+                return Task.FromResult(CaptureResult.Fail("DRIVER_NOT_INSTALLED",
+                    "Futronic: ftrScanAPI.dll could not be loaded — install the Futronic driver"));
+            }
             if (!ok)
             {
                 uint err = FutronicSDK.ftrScanGetLastError(_device);
@@ -109,7 +119,7 @@ namespace FingerprintAgent.Adapters
                 FutronicSDK.ftrScanCloseDevice(_device);
                 _device = IntPtr.Zero;
                 _isConnected = false;
-                return Task.FromResult(CaptureResult.Fail("CAPTURE_ERROR", $"Futronic:{_vendorErrorCode}"));
+                return Task.FromResult(CaptureResult.Fail(ToStandardErrorCode(_vendorErrorCode, "CAPTURE_ERROR"), $"Futronic:{_vendorErrorCode}"));
             }
 
             // CRITICAL: invert pixels per D-07
@@ -185,6 +195,27 @@ namespace FingerprintAgent.Adapters
                     case 0x20000006: return "FTR_ERROR_INVALID_AUTHORIZATION_CODE";
                     default: return $"0x{err:X}";
                 }
+            }
+        }
+
+        /// <summary>
+        /// Per-adapter map step: Futronic vendor strings → the capture handler's
+        /// standard codes. Unmapped codes fall back to the coarse code untouched.
+        /// </summary>
+        internal static string ToStandardErrorCode(string vendorErrorCode, string coarseCode)
+        {
+            switch (vendorErrorCode)
+            {
+                case "DLL_NOT_FOUND":
+                    return "DRIVER_NOT_INSTALLED";
+                case "NOT_INITIALIZED":
+                case "DEVICE_OPEN_FAILED":
+                    return "SCANNER_NOT_CONNECTED";
+                case "CANCELLED":
+                case "FTR_ERROR_USER_CANCELED":
+                    return "CAPTURE_TIMEOUT";
+                default:
+                    return coarseCode;
             }
         }
 

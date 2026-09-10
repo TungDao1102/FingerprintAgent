@@ -28,6 +28,14 @@ namespace FingerprintAgent.Adapters
         /// </summary>
         public virtual bool ProbeConnection() => IsConnected;
 
+        /// <summary>
+        /// Per-adapter mapping step into the capture handler's standard errorCode
+        /// vocabulary. Default passes the coarse code through unchanged; adapters
+        /// whose SDK carries richer failure detail (via the vendor error latch)
+        /// override this to translate — see SecuGenAdapter.
+        /// </summary>
+        protected virtual string StandardizeErrorCode(string coarseCode) => coarseCode;
+
         public Task<CaptureResult> ScanAsync(CancellationToken cancellationToken = default)
         {
             if (cancellationToken.IsCancellationRequested)
@@ -44,13 +52,13 @@ namespace FingerprintAgent.Adapters
             catch (Exception ex)
             {
                 _lastError = ex.Message;
-                return Task.FromResult(CaptureResult.Fail("CAPTURE_ERROR", ex.Message));
+                return Task.FromResult(CaptureResult.Fail(StandardizeErrorCode("CAPTURE_ERROR"), ex.Message));
             }
 
             if (raw == null || raw.Length == 0)
             {
                 _lastError = "CAPTURE_RETURNED_EMPTY";
-                return Task.FromResult(CaptureResult.Fail("CAPTURE_ERROR", "Capture returned no image data"));
+                return Task.FromResult(CaptureResult.Fail(StandardizeErrorCode("CAPTURE_ERROR"), "Capture returned no image data"));
             }
 
             byte[] png = ToPngGrayscale(raw, ImageWidth, ImageHeight);
