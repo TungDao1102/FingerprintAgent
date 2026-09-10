@@ -286,14 +286,15 @@ namespace FingerprintAgent.Service
             else
                 _logger?.Warn(cid, "OnConfigReloaded: _httpServer is null, skipping CORS update");
 
-            // D-09: active adapter stays the same, but new priority applies on next failure
+            // D-09: active adapter stays the same across a priority change; D-06:
+            // MockMode is reloadable too (E-2 flips it at runtime for E2E runs).
             var scannerManager = _scanner as ScannerManager;
-            scannerManager?.UpdatePriority(newConfig.Scanner.Priority);
+            scannerManager?.UpdateScannerConfig(newConfig.Scanner);
 
             // D-14/D-15: ApplyConfig starts/stops the Timer based on update.enabled toggle.
             _updateCheckService?.ApplyConfig(newConfig);
 
-            _logger?.Info(cid, $"OnConfigReloaded: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], cors mode={newConfig.Cors.Mode}, update enabled={newConfig.Update.Enabled}");
+            _logger?.Info(cid, $"OnConfigReloaded: applied scanner priority=[{string.Join(", ", newConfig.Scanner.Priority)}], mockMode={newConfig.Scanner.MockMode}, cors mode={newConfig.Cors.Mode}, update enabled={newConfig.Update.Enabled}");
         }
 
         public void StartConsole()

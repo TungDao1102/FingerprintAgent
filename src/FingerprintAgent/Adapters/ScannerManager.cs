@@ -30,7 +30,7 @@ namespace FingerprintAgent.Adapters
         private readonly AgentLogger _logger;
         private readonly ScannerConfig _config;
         private readonly CancellationTokenSource _cts;
-        private readonly bool _mockMode;
+        private volatile bool _mockMode;
         private IScannerAdapter _activeAdapter;
         private readonly object _adapterLock = new object();
         private readonly SemaphoreSlim _scanGate = new SemaphoreSlim(1, 1);
@@ -282,6 +282,43 @@ namespace FingerprintAgent.Adapters
             }
 
             _logger?.Info(null, $"ScannerManager: priority updated, new order=[{string.Join(", ", newPriority)}]");
+        }
+
+        /// <summary>
+        /// Applies a hot-reloaded ScannerConfig: refreshes priority AND MockMode.
+        /// MockMode is part of ScannerConfig (D-06 reload scope) — the E2E workflow
+        /// (E-2) flips it in ProgramData after the service has started, so it must
+        /// take effect without a restart.
+        ///
+        /// Switching to real mode clears the mock ActiveAdapter: otherwise the
+        /// TryProbe fast-path and the SCAN-06 retry would keep trusting the mock.
+        /// Backoff state is NOT reset — a successful capture resets it, and /health
+        /// reports "healthy" from the new ActiveAdapter regardless of backoffStep.
+        /// Thread-safety: same contract as UpdatePriority — an in-flight capture may
+        /// complete under the old mode.
+        /// </summary>
+        public void UpdateScannerConfig(ScannerConfig newScannerConfig)
+        {
+            if (newScannerConfig == null)
+                return;
+
+            UpdatePriority(newScannerConfig.Priority);
+
+            bool oldMockMode = _mockMode;
+            if (newScannerConfig.MockMode == oldMockMode)
+                return;
+
+            _mockMode = newScannerConfig.MockMode;
+            if (_mockMode)
+            {
+                ActiveAdapter = new MockScannerAdapter();
+                _logger?.Info(null, "ScannerManager: MockMode=true applied via hot reload");
+            }
+            else
+            {
+                ActiveAdapter = null;
+                _logger?.Info(null, "ScannerManager: MockMode=false applied via hot reload");
+            }
         }
 
         private static IScannerAdapter CreateAdapter(string vendorName)
