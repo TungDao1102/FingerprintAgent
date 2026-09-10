@@ -1,4 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
+import { existsSync } from 'fs';
+
+// Use system Chrome when present (dev machines); fall back to the
+// Playwright-bundled Chromium (installed by `npx playwright install chromium`
+// in CI) — the windows-latest runner has no Chrome at the old hard-coded path,
+// which made every browser-launching test fail with "executable doesn't exist".
+const SYSTEM_CHROME_PATHS = [
+  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+];
+const systemChrome = SYSTEM_CHROME_PATHS.find((p) => existsSync(p));
 
 /**
  * Playwright configuration for FingerprintAgent E2E tests.
@@ -45,10 +56,9 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        channel: 'chrome',
-        launchOptions: {
-          executablePath: 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        },
+        ...(systemChrome
+          ? { channel: 'chrome' as const, launchOptions: { executablePath: systemChrome } }
+          : {}),
       },
     },
   ],
