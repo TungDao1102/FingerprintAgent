@@ -21,7 +21,6 @@
     <FileVersion>0.1.0.0</FileVersion>
     <SecuGenSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\SecuGen\SecuGen.FDxSDKPro.Windows.dll')">true</SecuGenSdkPresent>
     <ZKTecoSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\ZKTeco\libzkfp.dll')">true</ZKTecoSdkPresent>
-    <DigitalPersonaSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\DigitalPersona\DPFPDevNET.dll')">true</DigitalPersonaSdkPresent>
     <FutronicSdkPresent Condition="Exists('$(MSBuildProjectDirectory)\..\..\lib\Futronic\ftrScanAPI.dll')">true</FutronicSdkPresent>
   </PropertyGroup>
 
@@ -31,10 +30,6 @@
 
   <PropertyGroup Condition="'$(SecuGenSdkPresent)' == 'true'">
     <DefineConstants>$(DefineConstants);SECUGEN_SDK_PRESENT</DefineConstants>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(DigitalPersonaSdkPresent)' == 'true'">
-    <DefineConstants>$(DefineConstants);DIGITALPERSONA_SDK_PRESENT</DefineConstants>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(FutronicSdkPresent)' == 'true'">
@@ -47,12 +42,6 @@
     </Reference>
   </ItemGroup>
 
-  <ItemGroup Condition="'$(DigitalPersonaSdkPresent)' == 'true'">
-    <Reference Include="DPFPDevNET">
-      <HintPath>$(MSBuildProjectDirectory)\..\..\lib\DigitalPersona\DPFPDevNET.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-
   <ItemGroup>
     <Reference Include="System.ServiceProcess" />
     <Reference Include="System.Drawing" />
@@ -61,10 +50,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- REVIEW FIX (02-02): Digital Persona U.are.U SDK via DPUruNet wrapper. The native DLLs
-         (DPFPDevNET.dll, DPFPCapture.dll, etc.) come from the vendor SDK download and must be
-         placed in lib/DigitalPersona/ — document in SCANNER_SETUP.md. Pin to 1.0.0.1 (offline cache). -->
-    <PackageReference Include="DPUruNet" Version="1.0.0.1" />
+    <!-- DigitalPersona is pure P/Invoke (DpNativeHost against dpfpdd.dll) — no NuGet or
+         managed wrapper. dpfpdd.dll resolves at runtime from the U.are.U driver on the
+         user's machine; the MSI ships no vendor DLLs. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="8.0.2" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="8.0.0" />

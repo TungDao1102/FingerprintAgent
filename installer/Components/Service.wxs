@@ -34,8 +34,6 @@
               Source="$(var.FingerprintAgent.Host.TargetDir)FingerprintAgent.Library.dll" />
         <File Id="fil_NewtonsoftJson"
               Source="$(var.FingerprintAgent.Host.TargetDir)Newtonsoft.Json.dll" />
-        <File Id="fil_DPUruNet"
-              Source="$(var.FingerprintAgent.Host.TargetDir)DPUruNet.dll" />
         <File Id="fil_MsBclAsyncInterfaces"
               Source="$(var.FingerprintAgent.Host.TargetDir)Microsoft.Bcl.AsyncInterfaces.dll" />
         <File Id="fil_MsCfgAbstractions"
