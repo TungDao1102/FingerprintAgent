@@ -35,15 +35,17 @@ process-wide and terminates native context for ALL ZKTeco instances. Called **on
 (in `Program.cs` console path + `FingerprintAgentService`). Individual 
 `ZKTecoAdapter.Dispose()` must **NOT** call it.
 
-### SDK presence is conditional
-Vendor SDKs are gated by file existence in `lib/`:
+### SDK presence is conditional (build-time only; SecuGen/Futronic)
+`lib/` is a dev/test folder — the build passes without it and the MSI ships no vendor DLLs; at runtime the P/Invoke adapters resolve vendor DLLs from the driver installed on the user's machine (SysWOW64/System32).
+
+- **ZKTeco** — always compiled, real code, no gate. (`ZKTECO_SDK_PRESENT` is defined by the csproj when `lib/ZkTeco/libzkfp.dll` exists but is referenced by no C# source — the define is inert. The `lib/ZkTeco/*.dll` files are committed to the repo for local probing only.)
+- **DigitalPersona** — always compiled, pure P/Invoke via `DpNativeHost` (`dpfpdd.dll` from the installed U.are.U driver at runtime). The DPUruNet NuGet package and the conditional `DPFPDevNET.dll` reference were removed (2026-09) — no `#if` gate.
+- **SecuGen / Futronic** — still gated by file existence in `lib/`:
 ```
-lib/ZKTeco/libzkfp.dll             → DefineConstants ZKTECO_SDK_PRESENT
 lib/SecuGen/SecuGen.FDxSDKPro.Windows.dll  → SECUGEN_SDK_PRESENT
-lib/DigitalPersona/DPFPDevNET.dll  → DIGITALPERSONA_SDK_PRESENT
-lib/Futronic/ftrScanAPI.dll        → FUTRONIC_SDK_PRESENT
+lib/Futronic/ftrScanAPI.dll                → FUTRONIC_SDK_PRESENT
 ```
-Missing SDK = adapter compiles to a stub. Real-device tests skip gracefully when SDK absent (`ZKTecoDeviceIntegrationTests`).
+Missing SDK = that adapter compiles to a stub. Real-device tests skip gracefully when SDK absent (`ZKTecoDeviceIntegrationTests`).
 
 ### No DI container (despite package)
 `Microsoft.Extensions.DependencyInjection` is referenced in `.csproj` but **never used** — all classes `new`'d directly. Don't introduce DI without explicit reason.

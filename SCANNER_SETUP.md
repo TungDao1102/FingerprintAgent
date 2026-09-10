@@ -91,34 +91,28 @@ All DLLs must go into the same folder as `FingerprintAgent.exe` per D-08.
 
 ---
 
-## Digital Persona (DPUruNet NuGet + native U.are.U SDK DLLs)
+## Digital Persona (dpfpdd.dll — 32-bit P/Invoke)
 
 ### Compatible Models
 Digital Persona U.are.U 4500, U.are.U 4500B, U.are.U 5160, U.are.U 5300
 
 ### Prerequisites
-1. Download the Digital Persona U.are.U SDK from HID Global (developer.hidglobal.com)
-2. Copy all managed and native DLLs from the SDK to `lib\DigitalPersona\`:
-   - `DPFPDevNET.dll`, `DPFPEngNET.dll`, `DPFPGuiNET.dll`, `DPFPShrNET.dll`, `DPFPVerNET.dll` (managed assemblies)
-   - Native DLLs: `DPFPCapture.dll`, `DPFPBase.dll`, and others from the SDK
-
-### NuGet Package
-`DPUruNet` version `1.0.0.1` is used (available in offline cache). The package provides the .NET binding — native DLLs must come from the vendor SDK download.
+1. Install the U.are.U driver on the workstation — the driver provides `dpfpdd.dll` (in `System32`/`SysWOW64`)
+2. No NuGet / managed wrapper needed — `DigitalPersonaAdapter` talks to `dpfpdd.dll` directly via `Adapters/DpNativeHost.cs` (raw P/Invoke, same pattern as `ZkNativeHost`). The former `DPUruNet 1.0.0.1` NuGet package and the conditional `DPFPDevNET.dll` managed reference were removed — the wrapper assembly was never referenced by compiled code.
 
 ### Setup Steps
-1. Install Digital Persona U.are.U SDK
-2. Copy all DLLs from the SDK directory to `lib\DigitalPersona\`
-3. Run `dotnet restore` to fetch `DPUruNet 1.0.0.1`
-4. The adapter uses `#if DIGITALPERSONA_SDK_PRESENT` — define this preprocessor constant when the DLLs are present
+1. The project builds with or without `lib\` — the adapter code compiles unconditionally (no `#if` gate)
+2. Optional for local device testing: install the U.are.U SDK/driver, or copy the 32-bit `dpfpdd.dll` into `lib\DigitalPersona\` and add that folder to the DLL search path when running
+3. Missing driver at runtime → `DRIVER_NOT_INSTALLED` / `SCANNER_NOT_CONNECTED` — never a crash
 
 ### Build Requirement
-`<PlatformTarget>x86</PlatformTarget>` — the native DLLs are 32-bit.
+`<PlatformTarget>x86</PlatformTarget>` — the native DLL is 32-bit.
 
 ### Image Format
-DPUruNet `Sample` converted to `Bitmap` via `SampleConversion` — 8-bit grayscale. No pixel inversion needed.
+`DPFPDD_IMG_FMT_PIXEL_BUFFER` — raw 8bpp grayscale (width × height bytes), PNG-encoded via the shared `PngEncoder.ToPngGrayscale`. No pixel inversion needed.
 
 ### Distribution
-All DLLs go into the same folder as `FingerprintAgent.exe` per D-08.
+No vendor DLL ships in the MSI (D-32a). The U.are.U driver installed on the user's workstation provides `dpfpdd.dll`; the loader finds it via the standard search path (app dir → SysWOW64/System32 → PATH).
 
 ---
 
@@ -159,10 +153,10 @@ Copy `ftrScanAPI.dll` to the same folder as `FingerprintAgent.exe` per D-08.
 ### All Vendors
 - **PlatformTarget:** `x86` (non-negotiable — all vendor SDKs are 32-bit)
 - **Distribution:** All vendor DLLs must be in the same folder as `FingerprintAgent.exe`
-- **NuGet packages used:** `DPUruNet 1.0.0.1` (Digital Persona), `ZkTecoFingerPrint 1.2.1` (ZKTeco), `SecuGen.FDxSDKPro.Windows` (via HintPath to lib\SecuGen\)
+- **NuGet packages used:** none for scanner SDKs — ZKTeco (`ZkNativeHost` → `libzkfp.dll`) and DigitalPersona (`DpNativeHost` → `dpfpdd.dll`) are pure P/Invoke; Futronic is direct P/Invoke; SecuGen uses a HintPath to `lib\SecuGen\`
 
 ### Priority Order (default)
-`config.json` → `Scanner.Priority: ["SecuGen", "DigitalPersona", "Futronic", "ZKTeco"]`
+`config.json` → `Scanner.Priority: ["ZKTeco"]` (code default in `AgentConfig` is also `["ZKTeco"]`)
 
 ScannerManager tries adapters in this order on each `/api/capture` call, with the first successful scan winning. If all fail, returns `SCANNER_NOT_CONNECTED`.
 

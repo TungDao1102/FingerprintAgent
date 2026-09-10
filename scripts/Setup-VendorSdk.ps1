@@ -156,21 +156,14 @@ if ($Vendor -contains "SecuGen") {
 # Digital Persona
 
 if ($Vendor -contains "DigitalPersona") {
-    Write-Step "Digital Persona - U.are.U SDK (dpfpdd.dll + dpfj.dll)"
+    Write-Step "Digital Persona - dpfpdd.dll (P/Invoke, direct native)"
     $dir = New-LibDir "DigitalPersona"
-    Write-Info "NuGet package 'DPUruNet 1.0.0.1' (managed wrapper) - already restored."
-    Write-Info "Native DLLs needed: dpfpdd.dll, dpfj.dll + managed wrappers from SDK"
+    Write-Info "No NuGet needed - direct DllImport into dpfpdd.dll (DpNativeHost)"
+    Write-Info "Production resolves dpfpdd.dll from the installed U.are.U driver; lib\ is optional for local testing."
 
-    $nativeNeeded = @("dpfpdd.dll", "dpfj.dll")
-    $managedNeeded = @("DPFPDevNET.dll", "DPFPCapture.dll")
-    $allNeeded = $nativeNeeded + $managedNeeded
+    $found = Test-Dll "$dir\dpfpdd.dll"
 
-    $foundAll = $true
-    foreach ($f in $allNeeded) {
-        if (-not (Test-Dll "$dir\$f")) { $foundAll = $false }
-    }
-
-    if (-not $foundAll) {
+    if (-not $found) {
         $sdkPaths = @(
             "$env:ProgramFiles\DigitalPersona\UareUSdk\",
             "${env:ProgramFiles(x86)}\DigitalPersona\UareUSdk\",
@@ -181,12 +174,10 @@ if ($Vendor -contains "DigitalPersona") {
         foreach ($sp in $sdkPaths) {
             if (Test-Path $sp) {
                 Write-Ok "Found Digital Persona SDK at $sp"
-                foreach ($f in $allNeeded) {
-                    $src = Get-ChildItem "$sp" -Recurse -Filter $f -ErrorAction SilentlyContinue | Select-Object -First 1
-                    if ($src) {
-                        Copy-Item $src.FullName "$dir\$f" -Force
-                        Write-Ok "  Copied $f"
-                    }
+                $src = Get-ChildItem "$sp" -Recurse -Filter "dpfpdd.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($src) {
+                    Copy-Item $src.FullName "$dir\dpfpdd.dll" -Force
+                    Write-Ok "  Copied dpfpdd.dll"
                 }
                 $copied = $true
                 break
@@ -194,16 +185,11 @@ if ($Vendor -contains "DigitalPersona") {
         }
 
         if (-not $copied) {
-            Write-Warn "Digital Persona SDK not installed on this machine."
-            Write-Action "DOWNLOAD: Digital Persona U.are.U SDK (HID Global - registration required)"
+            Write-Warn "Digital Persona U.are.U driver/SDK not found on this machine."
+            Write-Action "The driver (with dpfpdd.dll) is only needed to TEST the DigitalPersona adapter locally."
+            Write-Action "  DOWNLOAD: Digital Persona U.are.U SDK / driver (HID Global - registration required)"
             Write-Action "  URL: https://developer.hidglobal.com/"
-            Write-Action "  After download + install, re-run this script OR copy from SDK:"
-            Write-Action "    -> $dir"
-            Write-Action "  Required files:"
-            Write-Action "    - dpfpdd.dll (native device driver)"
-            Write-Action "    - dpfj.dll (native fingerprint engine)"
-            Write-Action "    - DPFPDevNET.dll (managed wrapper)"
-            Write-Action "    - DPFPCapture.dll (managed capture)"
+            Write-Action "  After install, copy dpfpdd.dll -> $dir (managed wrappers and dpfj.dll are no longer used)"
         }
     }
 }
@@ -258,8 +244,6 @@ $checks = @(
     @{ Vendor="SecuGen";        File="sgfpamx.dll";         Path="$LibRoot\SecuGen\sgfpamx.dll" }
     @{ Vendor="SecuGen";        File="SecuGen.FDxSDKPro.Windows.dll"; Path="$LibRoot\SecuGen\SecuGen.FDxSDKPro.Windows.dll" }
     @{ Vendor="DigitalPersona"; File="dpfpdd.dll";          Path="$LibRoot\DigitalPersona\dpfpdd.dll" }
-    @{ Vendor="DigitalPersona"; File="dpfj.dll";            Path="$LibRoot\DigitalPersona\dpfj.dll" }
-    @{ Vendor="DigitalPersona"; File="DPFPDevNET.dll";      Path="$LibRoot\DigitalPersona\DPFPDevNET.dll" }
     @{ Vendor="Futronic";       File="ftrScanAPI.dll";      Path="$LibRoot\Futronic\ftrScanAPI.dll" }
 )
 
