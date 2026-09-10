@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 
 namespace FingerprintAgent.Configuration
 {
@@ -100,20 +101,38 @@ namespace FingerprintAgent.Configuration
             }
             catch
             {
-                // Best-effort cleanup of the temp file on any failure. If the rename
-                // succeeded, the temp file no longer exists and this is a no-op.
+                CleanupTempFile(tempPath);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Best-effort cleanup with a bounded retry. On AV-active systems (e.g.
+        /// Defender real-time scanning on CI) the just-closed .tmp handle can be
+        /// held for a few hundred ms, so a single File.Delete throws and the
+        /// best-effort swallow leaves a permanent leak. Three attempts x 100ms
+        /// bridges the scan window; a still-failing delete stays swallowed — the
+        /// original exception is more important.
+        /// </summary>
+        private static void CleanupTempFile(string tempPath)
+        {
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
                 try
                 {
                     if (File.Exists(tempPath))
                     {
                         File.Delete(tempPath);
                     }
+                    return;
                 }
                 catch
                 {
-                    // Swallow cleanup errors — original exception is more important.
+                    if (attempt < 2)
+                    {
+                        Thread.Sleep(100);
+                    }
                 }
-                throw;
             }
         }
     }
