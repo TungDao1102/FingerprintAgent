@@ -10,6 +10,7 @@ namespace FingerprintAgent.Tests.Scanner
     /// These are conditionally skipped when no device is present, so `dotnet test`
     /// still passes on machines without hardware.
     /// </summary>
+    [Collection("ProbeIntegration")]
     public class ZKTecoDeviceIntegrationTests
     {
         [Fact]
@@ -87,6 +88,35 @@ namespace FingerprintAgent.Tests.Scanner
                 Console.WriteLine($"[ZKTeco] Capture failed/skipped: ErrorCode={result.ErrorCode}, ErrorMessage={result.ErrorMessage}");
             }
 
+            adapter.Dispose();
+        }
+
+        /// <summary>
+        /// Regression guard: a successful Initialize() must clear a latched _vendorErrorCode
+        /// (e.g. "ERROR_INITLIB" from a transient failed init) — otherwise /health reports
+        /// "healthy" with a stale error forever, since no success path writes "NONE".
+        /// </summary>
+        [Fact]
+        public void Initialize_AfterStaleError_VendorErrorCodeResetToNone()
+        {
+            var adapter = new ZKTecoAdapter();
+
+            // Arrange — latch a stale error as if a previous init had failed
+            // (reflection on the private invariant, same approach as ZKTecoAdapterProbeTests).
+            var field = typeof(ZKTecoAdapter).GetField("_vendorErrorCode",
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(field);
+            field.SetValue(adapter, "ERROR_INITLIB");
+
+            bool ok = adapter.Initialize();
+            if (!ok)
+            {
+                Console.WriteLine($"[ZKTeco] Skipped stale-error reset check. VendorErrorCode={adapter.VendorErrorCode}");
+                adapter.Dispose();
+                return;
+            }
+
+            Assert.Equal("NONE", adapter.VendorErrorCode);
             adapter.Dispose();
         }
     }

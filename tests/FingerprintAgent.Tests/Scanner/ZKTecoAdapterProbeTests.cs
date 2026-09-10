@@ -20,6 +20,7 @@ namespace FingerprintAgent.Tests.Scanner
     /// when the ZKTeco SDK is not installed at test time. The fact that the call
     /// completes without throwing IS evidence the native close was bypassed.
     /// </summary>
+    [Collection("ProbeIntegration")]
     public class ZKTecoAdapterProbeTests
     {
         private const BindingFlags PrivateStatic = BindingFlags.Static | BindingFlags.NonPublic;

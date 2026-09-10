@@ -219,6 +219,8 @@ namespace FingerprintAgent.Adapters
                 _model = product;
 
             _isConnected = true;
+            // Success clears a latched error — otherwise a stale ERROR_INITLIB persists in /health forever.
+            _vendorErrorCode = "NONE";
             return true;
         }
 
