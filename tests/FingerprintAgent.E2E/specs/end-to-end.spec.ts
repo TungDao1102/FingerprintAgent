@@ -109,7 +109,7 @@ test.describe('Browser -> agent -> backend round-trip', () => {
         expect(lastEntry.sha256!.length).toBe(44);
     });
 
-    test('real-browser fetch issues CORS preflight and gets 204', async ({ page }: { page: Page }) => {
+    test('real-browser fetch survives CORS preflight and reaches the agent', async ({ page }: { page: Page }) => {
         // Cross-check the HTTP-only preflight spec (cors-preflight.spec.ts)
         // by going through a real Chromium fetch — proves the browser does not
         // see any CORS surprises that the bare-HTTP test missed.
@@ -121,26 +121,30 @@ test.describe('Browser -> agent -> backend round-trip', () => {
         await page.goto(saasPageUrl);
 
         // POST + Content-Type: application/json forces the browser to auto-issue
-        // an OPTIONS preflight. status === 0 means the preflight was rejected.
+        // an OPTIONS preflight. A rejected preflight makes fetch throw — a
+        // resolved fetch with a real HTTP status and a readable JSON body proves
+        // Chromium accepted the agent's CORS policy end-to-end.
+        //
+        // Do NOT assert allow-origin/allow-methods here: access-control-* response
+        // headers are not CORS-safelisted, so browser JS reads them as null even
+        // when the server sends them (verified: raw response carries them). Raw
+        // header assertions live in cors-preflight.spec.ts.
         const result = await page.evaluate(async (origin: string) => {
-            const response = await fetch(`${origin}/api/capture`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: '{}',
-            });
-            return {
-                status: response.status,
-                allowOrigin: response.headers.get('access-control-allow-origin'),
-                allowMethods: response.headers.get('access-control-allow-methods'),
-                allowHeaders: response.headers.get('access-control-allow-headers'),
-                maxAge: response.headers.get('access-control-max-age'),
-            };
+            try {
+                const response = await fetch(`${origin}/api/capture`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}',
+                });
+                const body = (await response.json()) as { errorCode?: string | null };
+                return { threw: false, error: null as string | null, status: response.status, errorCode: body.errorCode ?? null };
+            } catch (e) {
+                return { threw: true, error: String(e), status: 0, errorCode: null };
+            }
         }, AGENT_ORIGIN);
 
-        expect(result.status).not.toBe(0);
-        expect(result.allowOrigin).toBe('*');
-        expect(result.allowMethods).toBe('POST, GET, OPTIONS');
-        expect(result.allowHeaders).toBe('Content-Type');
-        expect(result.maxAge).toBe('86400');
+        expect(result.threw, `fetch must not throw (rejected preflight/CORS): ${result.error ?? ''}`).toBe(false);
+        expect(result.status).toBe(400);
+        expect(result.errorCode).toBe('INVALID_REQUEST');
     });
 });
