@@ -61,7 +61,16 @@ namespace FingerprintAgent.Adapters
                 return Task.FromResult(CaptureResult.Fail(StandardizeErrorCode("CAPTURE_ERROR"), "Capture returned no image data"));
             }
 
-            byte[] png = ToPngGrayscale(raw, ImageWidth, ImageHeight);
+            byte[] png;
+            try
+            {
+                png = ToPngGrayscale(raw, ImageWidth, ImageHeight);
+            }
+            catch (Exception ex)
+            {
+                _lastError = ex.Message;
+                return Task.FromResult(CaptureResult.Fail("CONVERSION_ERROR", $"Image conversion failed: {ex.Message}"));
+            }
 
             string verificationData;
             using (var sha256 = SHA256.Create())

@@ -188,6 +188,21 @@ namespace FingerprintAgent.Tests.Adapters
         }
 
         [Fact]
+        public async Task ScanAsync_PngConversionThrows_ReturnsConversionError()
+        {
+            // Arrange — buffer shorter than 10x10 makes Marshal.Copy inside
+            // PngEncoder throw; conversion happens OUTSIDE the CaptureRawImage try.
+            var adapter = new TestableAdapter { RawImageToReturn = new byte[3] };
+
+            // Act
+            CaptureResult result = await adapter.ScanAsync();
+
+            // Assert
+            Assert.False(result.IsSuccess);
+            Assert.Equal("CONVERSION_ERROR", result.ErrorCode);
+        }
+
+        [Fact]
         public async Task ScanAsync_ValidRawImage_ReturnsSuccessWithPng()
         {
             // Arrange
