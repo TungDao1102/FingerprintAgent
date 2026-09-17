@@ -23,10 +23,14 @@ namespace FingerprintAgent.Logging
             "(?:[A-Za-z0-9+/]{4}){10,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})?",
             RegexOptions.Compiled);
 
+        private const string InstallLogPattern = "install-*.log";
+
         private readonly string _filePath;
+        private readonly string _baseName;
         private readonly LogLevel _minLevel;
         private readonly long _maxSizeBytes;
         private readonly int _maxFiles;
+        private readonly int _retentionDays;
         private StreamWriter _writer;
         private readonly object _lock = new object();
         private bool _disposed;
@@ -36,9 +40,11 @@ namespace FingerprintAgent.Logging
             if (config == null) throw new ArgumentNullException(nameof(config));
 
             _filePath = config.File;
+            _baseName = Path.GetFileName(_filePath);
             _minLevel = ParseLogLevel(config.Level);
             _maxSizeBytes = config.MaxSizeMb > 0 ? config.MaxSizeMb * 1024L * 1024L : 0;
             _maxFiles = Math.Max(2, config.MaxFiles);
+            _retentionDays = config.RetentionDays;
 
             var directory = Path.GetDirectoryName(_filePath);
             if (!string.IsNullOrEmpty(directory))
@@ -46,12 +52,19 @@ namespace FingerprintAgent.Logging
                 Directory.CreateDirectory(directory);
             }
 
+            int removedFiles = CleanupOldFiles();
+
             var stream = new FileStream(
                 _filePath,
                 FileMode.Append,
                 FileAccess.Write,
                 FileShare.Read);
             _writer = new StreamWriter(stream) { AutoFlush = true };
+
+            if (removedFiles > 0)
+            {
+                WriteRetentionSummary(removedFiles);
+            }
         }
 
         public static string GenerateCorrelationId()
@@ -158,6 +171,12 @@ namespace FingerprintAgent.Logging
             {
                 // Reopen failed: _writer stays null; Write() drops entries until a later success.
             }
+
+            int removedFiles = CleanupOldFiles();
+            if (removedFiles > 0)
+            {
+                WriteRetentionSummary(removedFiles);
+            }
         }
 
         private static void ShiftFile(string src, string dst)
@@ -165,6 +184,125 @@ namespace FingerprintAgent.Logging
             if (!File.Exists(src)) return;
             if (File.Exists(dst)) File.Delete(dst);
             File.Move(src, dst);
+        }
+
+        /// <summary>
+        /// Retention sweep, run at startup and after each rotation.
+        /// 1. Count rule: rotated files "{base}.{N}" with N >= MaxFiles are orphans
+        ///    (left over after MaxFiles was lowered) and are deleted.
+        /// 2. Age rule: rotated files and install-*.log older than RetentionDays are
+        ///    deleted (RetentionDays &lt;= 0 disables the age rule).
+        /// The current log file is never touched. Returns the number of files removed;
+        /// the caller is responsible for writing the summary.
+        /// </summary>
+        private int CleanupOldFiles()
+        {
+            try
+            {
+                string dir = Path.GetDirectoryName(_filePath);
+                if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir))
+                {
+                    return 0;
+                }
+
+                DateTime? cutoffUtc = _retentionDays <= 0
+                    ? (DateTime?)null
+                    : DateTime.UtcNow.AddDays(-_retentionDays);
+                int removed = 0;
+
+                foreach (string file in Directory.GetFiles(dir, _baseName + ".*"))
+                {
+                    string fileName = Path.GetFileName(file);
+                    if (string.Equals(fileName, _baseName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    int index;
+                    if (!TryGetRotationIndex(fileName, _baseName, out index))
+                    {
+                        continue;
+                    }
+
+                    bool isOrphan = index >= _maxFiles;
+                    bool isExpired = cutoffUtc.HasValue && File.GetLastWriteTimeUtc(file) < cutoffUtc.Value;
+                    if (!isOrphan && !isExpired)
+                    {
+                        continue;
+                    }
+
+                    if (TryDelete(file))
+                    {
+                        removed++;
+                    }
+                }
+
+                if (cutoffUtc.HasValue)
+                {
+                    foreach (string file in Directory.GetFiles(dir, InstallLogPattern))
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < cutoffUtc.Value && TryDelete(file))
+                        {
+                            removed++;
+                        }
+                    }
+                }
+
+                return removed;
+            }
+            catch (Exception ex)
+            {
+                // Best-effort sweep, but never silently: operators watching the Event Log
+                // must be able to see that retention stopped working (disk-fill symptom).
+                TryWriteEventLog($"Log retention sweep failed: {ex.GetType().Name}: {ex.Message}", LogLevel.Warn);
+                return 0;
+            }
+        }
+
+        private void WriteRetentionSummary(int removedFiles)
+        {
+            string entry = $"{DateTime.UtcNow:O} [INFO] [-] Log retention: removed {removedFiles} old log file(s) from {Path.GetDirectoryName(_filePath)}";
+
+            lock (_lock)
+            {
+                if (_writer == null)
+                {
+                    TryWriteEventLog(entry, LogLevel.Info);
+                    return;
+                }
+
+                _writer.WriteLine(entry);
+                _writer.Flush();
+            }
+        }
+
+        private static bool TryGetRotationIndex(string fileName, string baseName, out int index)
+        {
+            index = 0;
+            if (!fileName.StartsWith(baseName + ".", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string suffix = fileName.Substring(baseName.Length + 1);
+            return int.TryParse(suffix, out index);
+        }
+
+        private static bool TryDelete(string path)
+        {
+            try
+            {
+                File.Delete(path);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return false;
+            }
         }
 
         private string RedactIfImageData(string message)

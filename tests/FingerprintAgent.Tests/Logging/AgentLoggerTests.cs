@@ -200,6 +200,134 @@ namespace FingerprintAgent.Tests.Logging
             Assert.True(File.Exists(nestedFile));
         }
 
+        [Fact]
+        public void Cleanup_OrphanFilesBeyondMaxFiles_Deleted()
+        {
+            SeedFile("agent.log.3");
+            SeedFile("agent.log.5");
+            SeedFile("agent.log.6");
+
+            using (CreateLoggerWith(maxFiles: 5))
+            {
+            }
+
+            Assert.False(File.Exists(Path.Combine(_logDir, "agent.log.5")));
+            Assert.False(File.Exists(Path.Combine(_logDir, "agent.log.6")));
+            Assert.True(File.Exists(Path.Combine(_logDir, "agent.log.3")));
+        }
+
+        [Fact]
+        public void Cleanup_OldRotatedFileBeyondRetention_Deleted()
+        {
+            SeedFile("agent.log.1", ageDays: 100);
+            SeedFile("agent.log.2", ageDays: 10);
+
+            using (CreateLoggerWith(retentionDays: 90))
+            {
+            }
+
+            Assert.False(File.Exists(Path.Combine(_logDir, "agent.log.1")));
+            Assert.True(File.Exists(Path.Combine(_logDir, "agent.log.2")));
+        }
+
+        [Fact]
+        public void Cleanup_RetentionDaysZero_AgeSweepDisabled()
+        {
+            SeedFile("agent.log.1", ageDays: 100);
+            SeedFile("install-20200101-000000.log", ageDays: 100);
+
+            using (CreateLoggerWith(retentionDays: 0))
+            {
+            }
+
+            Assert.True(File.Exists(Path.Combine(_logDir, "agent.log.1")));
+            Assert.True(File.Exists(Path.Combine(_logDir, "install-20200101-000000.log")));
+        }
+
+        [Fact]
+        public void Cleanup_NeverDeletesCurrentLogFile()
+        {
+            var path = SeedFile("agent.log", "seed content", ageDays: 100);
+
+            using (var logger = CreateLoggerWith(retentionDays: 90))
+            {
+                logger.Info("abc123", "after cleanup");
+            }
+
+            Assert.True(File.Exists(path));
+            var lines = File.ReadAllLines(path);
+            Assert.Equal("seed content", lines[0]);
+        }
+
+        [Fact]
+        public void Cleanup_OldInstallLogsBeyondRetention_Deleted()
+        {
+            SeedFile("install-20200101-000000.log", ageDays: 100);
+            SeedFile("install-20260901-000000.log", ageDays: 5);
+
+            using (CreateLoggerWith(retentionDays: 90))
+            {
+            }
+
+            Assert.False(File.Exists(Path.Combine(_logDir, "install-20200101-000000.log")));
+            Assert.True(File.Exists(Path.Combine(_logDir, "install-20260901-000000.log")));
+        }
+
+        [Fact]
+        public void Rotate_WithOrphanFilesPresent_CleansOrphans()
+        {
+            SeedFile("agent.log.5");
+            SeedFile("agent.log.6");
+
+            using (var logger = CreateLoggerWith(maxSizeMb: 1, maxFiles: 5, retentionDays: 0))
+            {
+                for (int i = 0; i < 2000; i++)
+                {
+                    logger.Info($"cid{i:D4}", $"rotation test {i} " + new string('-', 700));
+                }
+            }
+
+            Assert.True(File.Exists(Path.Combine(_logDir, "agent.log.1")), "rotation should have produced agent.log.1");
+            Assert.False(File.Exists(Path.Combine(_logDir, "agent.log.5")));
+            Assert.False(File.Exists(Path.Combine(_logDir, "agent.log.6")));
+        }
+
+        [Fact]
+        public void Cleanup_SummaryWrittenToLogFile_WhenFilesRemoved()
+        {
+            SeedFile("agent.log.9");
+
+            using (CreateLoggerWith(maxFiles: 5))
+            {
+            }
+
+            var lines = File.ReadAllLines(_logFile);
+            Assert.Contains(lines, line => line.Contains("[INFO] [-] Log retention: removed 1 old log file(s)"));
+        }
+
+        private string SeedFile(string fileName, string content = "seed", int ageDays = 0)
+        {
+            var path = Path.Combine(_logDir, fileName);
+            File.WriteAllText(path, content + Environment.NewLine);
+            if (ageDays > 0)
+            {
+                File.SetLastWriteTimeUtc(path, DateTime.UtcNow.AddDays(-ageDays));
+            }
+            return path;
+        }
+
+        private AgentLogger CreateLoggerWith(int maxSizeMb = 10, int maxFiles = 5, int retentionDays = 90)
+        {
+            return new AgentLogger(new LoggingConfig
+            {
+                Level = "INFO",
+                File = _logFile,
+                MaxSizeMb = maxSizeMb,
+                MaxFiles = maxFiles,
+                RetentionDays = retentionDays
+            });
+        }
+
         private AgentLogger CreateLogger(string level)
         {
             return new AgentLogger(new LoggingConfig
