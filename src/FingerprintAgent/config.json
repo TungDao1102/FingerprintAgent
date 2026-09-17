@@ -22,7 +22,8 @@
     "level": "INFO",
     "file": "C:\\ProgramData\\FingerprintAgent\\Logs\\agent.log",
     "maxSizeMb": 10,
-    "maxFiles": 5
+    "maxFiles": 5,
+    "retentionDays": 90
   },
   "security": {
     "bindIp": "127.0.0.1"

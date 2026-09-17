@@ -42,6 +42,10 @@ namespace FingerprintAgent.Configuration
         public string File { get; set; } = @"C:\ProgramData\FingerprintAgent\Logs\agent.log";
         public int MaxSizeMb { get; set; } = 10;
         public int MaxFiles { get; set; } = 5;
+
+        // Rotated files (agent.log.N) and install-*.log older than this are deleted
+        // at startup and after each rotation. 0 (or negative) disables the age rule.
+        public int RetentionDays { get; set; } = 90;
     }
 
     public class SecurityConfig

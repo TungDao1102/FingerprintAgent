@@ -231,6 +231,7 @@ namespace FingerprintAgent.Configuration
             config.Logging.File = GetString(configuration, "logging:file") ?? config.Logging.File;
             config.Logging.MaxSizeMb = GetInt(configuration, "logging:maxSizeMb") ?? config.Logging.MaxSizeMb;
             config.Logging.MaxFiles = GetInt(configuration, "logging:maxFiles") ?? config.Logging.MaxFiles;
+            config.Logging.RetentionDays = GetInt(configuration, "logging:retentionDays") ?? config.Logging.RetentionDays;
 
             // Security section
             config.Security.BindIp = GetString(configuration, "security:bindIp") ?? config.Security.BindIp;
